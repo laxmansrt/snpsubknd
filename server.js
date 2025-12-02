@@ -23,6 +23,7 @@ app.use('/api/attendance', require('./routes/attendanceRoutes'));
 app.use('/api/announcements', require('./routes/announcementRoutes'));
 app.use('/api/transport', require('./routes/transportRoutes'));
 app.use('/api/hostel', require('./routes/hostelRoutes'));
+app.use('/api/materials', require('./routes/studyMaterialRoutes'));
 
 // Health check
 app.get('/', (req, res) => {
