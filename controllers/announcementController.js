@@ -65,19 +65,30 @@ const getAnnouncements = async (req, res) => {
         }
 
         // Filter by target class for students
+        const andConditions = [];
+
+        // Expiration filter (always apply)
+        andConditions.push({
+            $or: [
+                { expiresAt: { $exists: false } },
+                { expiresAt: null },
+                { expiresAt: { $gte: new Date() } },
+            ]
+        });
+
+        // Student class filter
         if (userRole === 'student' && req.user.studentData?.class) {
-            query.$or = [
-                { targetClasses: { $size: 0 } }, // Announcements for all classes
-                { targetClasses: req.user.studentData.class }, // Announcements for specific class
-            ];
+            andConditions.push({
+                $or: [
+                    { targetClasses: { $size: 0 } }, // Announcements for all classes
+                    { targetClasses: req.user.studentData.class }, // Announcements for specific class
+                ]
+            });
         }
 
-        // Don't show expired announcements
-        query.$or = [
-            { expiresAt: { $exists: false } },
-            { expiresAt: null },
-            { expiresAt: { $gte: new Date() } },
-        ];
+        if (andConditions.length > 0) {
+            query.$and = andConditions;
+        }
 
         const announcements = await Announcement.find(query)
             .populate('publishedBy', 'name email role')
