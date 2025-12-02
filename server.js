@@ -24,6 +24,7 @@ app.use('/api/announcements', require('./routes/announcementRoutes'));
 app.use('/api/transport', require('./routes/transportRoutes'));
 app.use('/api/hostel', require('./routes/hostelRoutes'));
 app.use('/api/materials', require('./routes/studyMaterialRoutes'));
+app.use('/api/marks', require('./routes/marksRoutes'));
 
 // Health check
 app.get('/', (req, res) => {
