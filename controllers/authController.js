@@ -90,4 +90,71 @@ const getMe = async (req, res) => {
     }
 };
 
-module.exports = { loginUser, registerUser, getMe };
+// @desc    Bulk register users
+// @route   POST /api/auth/bulk-register
+// @access  Private/Admin
+const bulkRegisterUsers = async (req, res) => {
+    try {
+        const users = req.body; // Array of user objects
+        const results = {
+            success: 0,
+            failed: 0,
+            errors: []
+        };
+
+        for (const userData of users) {
+            try {
+                // Basic validation
+                if (!userData.email || !userData.name || !userData.role) {
+                    throw new Error(`Missing required fields for ${userData.email || 'unknown user'}`);
+                }
+
+                // Check if user exists
+                const userExists = await User.findOne({ email: userData.email });
+                if (userExists) {
+                    throw new Error(`User ${userData.email} already exists`);
+                }
+
+                // Prepare user object
+                const newUser = {
+                    name: userData.name,
+                    email: userData.email,
+                    role: userData.role,
+                    password: userData.password || 'welcome123', // Default password if not provided
+                };
+
+                // Role specific data
+                if (userData.role === 'student') {
+                    newUser.studentData = {
+                        usn: userData.usn,
+                        class: userData.class,
+                        semester: userData.semester,
+                        department: userData.department,
+                    };
+                } else if (userData.role === 'faculty') {
+                    newUser.facultyData = {
+                        employeeId: userData.employeeId,
+                        department: userData.department,
+                        designation: userData.designation,
+                    };
+                }
+
+                await User.create(newUser);
+                results.success++;
+            } catch (error) {
+                results.failed++;
+                results.errors.push({ email: userData.email, error: error.message });
+            }
+        }
+
+        res.json({
+            message: `Processed ${users.length} records`,
+            results
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = { loginUser, registerUser, getMe, bulkRegisterUsers };
