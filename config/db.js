@@ -11,16 +11,26 @@ const connectDB = async () => {
 
     try {
         if (!uri) {
-            console.error('Neither MONGODB_URI nor MONGO_URI is defined in environment variables');
+            console.error('CRITICAL: Neither MONGODB_URI nor MONGO_URI is defined');
             return;
         }
 
-        const conn = await mongoose.connect(uri);
+        // Clean URI (remove whitespace)
+        const cleanUri = uri.trim();
+        console.log('Attempting to connect to MongoDB...');
+
+        const conn = await mongoose.connect(cleanUri, {
+            serverSelectionTimeoutMS: 10000, // 10 seconds timeout for server selection
+            socketTimeoutMS: 45000,
+            family: 4 // Force IPv4
+        });
+
         cachedConnection = conn;
-        console.log(`MongoDB Connected: ${conn.connection.name || conn.connection.host}`);
+        console.log(`MongoDB Connected Successfully: ${conn.connection.name}`);
         return conn;
     } catch (error) {
-        console.error(`MongoDB Connection Error: ${error.message}`);
+        console.error(`MongoDB Connection Error Detail: ${error.message}`);
+        console.error(`Error Code: ${error.code}`);
         // Do not process.exit(1) in serverless environment
     }
 };
