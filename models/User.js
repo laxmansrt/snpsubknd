@@ -5,12 +5,14 @@ const userSchema = new mongoose.Schema({
     name: {
         type: String,
         required: true,
+        trim: true,
     },
     email: {
         type: String,
         required: true,
         unique: true,
         lowercase: true,
+        trim: true,
     },
     password: {
         type: String,
@@ -20,24 +22,25 @@ const userSchema = new mongoose.Schema({
         type: String,
         enum: ['admin', 'faculty', 'student', 'parent'],
         required: true,
+        trim: true,
     },
     // Role-specific data
     studentData: {
-        usn: String,
-        class: String,
+        usn: { type: String, trim: true },
+        class: { type: String, trim: true },
         semester: Number,
-        department: String,
+        department: { type: String, trim: true },
         attendance: { type: Number, default: 0 },
         cgpa: { type: Number, default: 0 },
     },
     facultyData: {
-        employeeId: String,
-        department: String,
-        designation: String,
+        employeeId: { type: String, trim: true },
+        department: { type: String, trim: true },
+        designation: { type: String, trim: true },
     },
     parentData: {
-        childUsn: String,
-        childName: String,
+        childUsn: { type: String, trim: true },
+        childName: { type: String, trim: true },
     },
 }, {
     timestamps: true,
