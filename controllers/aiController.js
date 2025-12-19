@@ -22,11 +22,7 @@ try {
 const chatWithAI = async (req, res) => {
     try {
         const { message, history, context } = req.body;
-        const user = req.user;
-
-        if (!user) {
-            return res.status(401).json({ message: "User not authenticated" });
-        }
+        const user = req.user; // May be undefined for guest users
 
         if (!openai) {
             console.error("OpenAI client not initialized. Check OPENAI_API_KEY.");
@@ -41,10 +37,14 @@ const chatWithAI = async (req, res) => {
         let portalContext = context;
         if (!portalContext) {
             try {
-                const announcements = await Announcement.find({
-                    isActive: true,
-                    targetAudience: { $in: [user.role, 'all'] }
-                }).sort({ publishedAt: -1 }).limit(5);
+                const query = { isActive: true };
+                if (user) {
+                    query.targetAudience = { $in: [user.role, 'all'] };
+                } else {
+                    query.targetAudience = 'all';
+                }
+
+                const announcements = await Announcement.find(query).sort({ publishedAt: -1 }).limit(5);
 
                 portalContext = announcements.map(a =>
                     `Title: ${a.title}, Content: ${a.content}, Category: ${a.category}`
@@ -57,13 +57,16 @@ const chatWithAI = async (req, res) => {
 
         // 2. Prepare Messages for OpenAI
         const safeHistory = Array.isArray(history) ? history : [];
+        const userRole = user ? user.role : 'guest';
+
         const messages = [
             { role: "system", content: collegeAIPrompt },
             {
                 role: "system",
-                content: `User Role: ${user.role}. 
-                ${user.role === 'student' ? `Student Info: USN ${user.studentData?.usn || 'N/A'}, Class ${user.studentData?.class || 'N/A'}, Dept ${user.studentData?.department || 'N/A'}` : ''}
-                ${user.role === 'faculty' ? `Faculty Info: ID ${user.facultyData?.employeeId || 'N/A'}, Dept ${user.facultyData?.department || 'N/A'}` : ''}`
+                content: `User Role: ${userRole}. 
+                ${userRole === 'student' ? `Student Info: USN ${user.studentData?.usn || 'N/A'}, Class ${user.studentData?.class || 'N/A'}, Dept ${user.studentData?.department || 'N/A'}` : ''}
+                ${userRole === 'faculty' ? `Faculty Info: ID ${user.facultyData?.employeeId || 'N/A'}, Dept ${user.facultyData?.department || 'N/A'}` : ''}
+                ${userRole === 'guest' ? `Visitor Info: This is a guest user on the landing page.` : ''}`
             },
             {
                 role: "system",

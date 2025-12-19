@@ -4,7 +4,7 @@ const { chatWithAI } = require('../controllers/aiController');
 const { protect } = require('../middleware/authMiddleware');
 
 // @route   POST /api/ai/chat
-// @access  Private
-router.post('/chat', protect, chatWithAI);
+// @access  Public
+router.post('/chat', chatWithAI);
 
 module.exports = router;
