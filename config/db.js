@@ -17,12 +17,15 @@ const connectDB = async () => {
 
         // Clean URI (remove whitespace)
         const cleanUri = uri.trim();
-        console.log('Attempting to connect to MongoDB...');
+
+        // Log masked URI for debugging (only first 15 chars)
+        console.log(`Attempting to connect to MongoDB with URI starting with: ${cleanUri.substring(0, 15)}...`);
 
         const conn = await mongoose.connect(cleanUri, {
-            serverSelectionTimeoutMS: 10000, // 10 seconds timeout for server selection
+            serverSelectionTimeoutMS: 5000, // Reduced to 5 seconds to catch error before Vercel timeout
             socketTimeoutMS: 45000,
-            family: 4 // Force IPv4
+            family: 4, // Force IPv4
+            connectTimeoutMS: 10000,
         });
 
         cachedConnection = conn;
@@ -31,6 +34,7 @@ const connectDB = async () => {
     } catch (error) {
         console.error(`MongoDB Connection Error Detail: ${error.message}`);
         console.error(`Error Code: ${error.code}`);
+        console.error(`Error Stack: ${error.stack}`);
         // Do not process.exit(1) in serverless environment
     }
 };
