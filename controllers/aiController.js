@@ -1,9 +1,11 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const OpenAI = require("openai");
 const collegeAIPrompt = require("../prompts/collegeAIPrompt");
 const Announcement = require("../models/Announcement");
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Initialize OpenAI
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+});
 
 /**
  * @desc    Chat with AI Assistant
@@ -32,33 +34,36 @@ const chatWithAI = async (req, res) => {
             ).join("\n");
         }
 
-        // 2. Generate Content using Gemini
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-        const chat = model.startChat({
-            history: history || [],
-            generationConfig: {
-                maxOutputTokens: 500,
+        // 2. Prepare Messages for OpenAI
+        const messages = [
+            { role: "system", content: collegeAIPrompt },
+            {
+                role: "system",
+                content: `User Role: ${user.role}. 
+                ${user.role === 'student' ? `Student Info: USN ${user.studentData?.usn}, Class ${user.studentData?.class}, Dept ${user.studentData?.department}` : ''}
+                ${user.role === 'faculty' ? `Faculty Info: ID ${user.facultyData?.employeeId}, Dept ${user.facultyData?.department}` : ''}`
             },
+            {
+                role: "system",
+                content: `Context from portal data:\n${portalContext || "No additional context provided."}`
+            },
+            ...history.map(h => ({
+                role: h.role === 'user' ? 'user' : 'assistant',
+                content: h.parts[0].text
+            })),
+            { role: "user", content: message }
+        ];
+
+        // 3. Generate Completion using OpenAI
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: messages,
+            max_tokens: 500,
         });
 
-        const fullPrompt = `
-${collegeAIPrompt}
+        const reply = completion.choices[0].message.content;
 
-User Role: ${user.role}
-${user.role === 'student' ? `Student Info: USN ${user.studentData?.usn}, Class ${user.studentData?.class}` : ''}
-
-Context from portal data:
-${portalContext || "No additional context provided."}
-
-User Message: ${message}
-`;
-
-        const result = await chat.sendMessage(fullPrompt);
-        const response = await result.response;
-        const text = response.text();
-
-        res.json({ reply: text });
+        res.json({ reply });
     } catch (error) {
         console.error("AI Chat Error:", error);
         res.status(500).json({ message: "AI Assistant is currently unavailable. Please try again later." });
