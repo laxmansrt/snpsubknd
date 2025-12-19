@@ -175,6 +175,19 @@ const getGlobalStats = async (req, res) => {
     }
 };
 
+// @desc    Get all unique classes
+// @route   GET /api/attendance/classes
+// @access  Private
+const getClasses = async (req, res) => {
+    try {
+        const classes = await User.distinct('studentData.class', { role: 'student' });
+        res.json(classes.filter(c => c)); // Filter out null/undefined
+    } catch (error) {
+        console.error('Get classes error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     markAttendance,
     getAttendance,

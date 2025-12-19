@@ -5,6 +5,8 @@ const {
     getAttendance,
     getAttendanceReport,
     getStudentsForClass,
+    getClasses,
+    getGlobalStats,
 } = require('../controllers/attendanceController');
 const { protect } = require('../middleware/authMiddleware');
 
