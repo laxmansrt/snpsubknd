@@ -1,42 +1,50 @@
 const mongoose = require('mongoose');
 
-let cachedConnection = null;
+// Disable buffering so we get immediate errors if not connected
+// This prevents the "buffering timed out" error by failing fast
+mongoose.set('bufferCommands', false);
+
+let cachedPromise = null;
 
 const connectDB = async () => {
-    if (cachedConnection && mongoose.connection.readyState === 1) {
-        return cachedConnection;
+    // If already connected, return the connection
+    if (mongoose.connection.readyState === 1) {
+        return mongoose.connection;
     }
 
-    const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+    // If a connection is already in progress, wait for it
+    if (!cachedPromise) {
+        const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
 
-    try {
         if (!uri) {
-            console.error('CRITICAL: Neither MONGODB_URI nor MONGO_URI is defined');
-            return;
+            const errorMsg = 'CRITICAL: Neither MONGODB_URI nor MONGO_URI is defined in environment variables';
+            console.error(errorMsg);
+            throw new Error(errorMsg);
         }
 
-        // Clean URI (remove whitespace)
         const cleanUri = uri.trim();
+        console.log(`Attempting new MongoDB connection...`);
 
-        // Log masked URI for debugging (only first 15 chars)
-        console.log(`Attempting to connect to MongoDB with URI starting with: ${cleanUri.substring(0, 15)}...`);
-
-        const conn = await mongoose.connect(cleanUri, {
-            serverSelectionTimeoutMS: 5000, // Reduced to 5 seconds to catch error before Vercel timeout
+        const options = {
+            serverSelectionTimeoutMS: 10000, // 10 seconds
             socketTimeoutMS: 45000,
             family: 4, // Force IPv4
             connectTimeoutMS: 10000,
-        });
+        };
 
-        cachedConnection = conn;
-        console.log(`MongoDB Connected Successfully: ${conn.connection.name}`);
-        return conn;
-    } catch (error) {
-        console.error(`MongoDB Connection Error Detail: ${error.message}`);
-        console.error(`Error Code: ${error.code}`);
-        console.error(`Error Stack: ${error.stack}`);
-        // Do not process.exit(1) in serverless environment
+        cachedPromise = mongoose.connect(cleanUri, options)
+            .then((m) => {
+                console.log(`MongoDB Connected Successfully: ${m.connection.name}`);
+                return m;
+            })
+            .catch((err) => {
+                console.error(`MongoDB Connection Error: ${err.message}`);
+                cachedPromise = null; // Reset so we can try again on next request
+                throw err;
+            });
     }
+
+    return cachedPromise;
 };
 
 module.exports = connectDB;
