@@ -25,8 +25,20 @@ app.use('/api/transport', require('./routes/transportRoutes'));
 app.use('/api/hostel', require('./routes/hostelRoutes'));
 app.use('/api/materials', require('./routes/studyMaterialRoutes'));
 app.use('/api/marks', require('./routes/marksRoutes'));
+app.use('/api/ai', require('./routes/aiRoutes'));
+
+const mongoose = require('mongoose');
 
 // Health check
+app.get('/health', (req, res) => {
+    const dbStatus = mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected';
+    res.json({
+        status: 'OK',
+        database: dbStatus,
+        timestamp: new Date().toISOString()
+    });
+});
+
 app.get('/', (req, res) => {
     res.json({ message: 'Sapthagiri NPS University API is running' });
 });

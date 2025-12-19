@@ -7,5 +7,6 @@ router.post('/login', loginUser);
 router.post('/register', protect, admin, registerUser);
 router.post('/bulk-register', protect, admin, require('../controllers/authController').bulkRegisterUsers);
 router.get('/me', protect, getMe);
+router.get('/users', protect, admin, require('../controllers/authController').getUsers);
 
 module.exports = router;

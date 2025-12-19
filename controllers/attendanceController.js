@@ -146,64 +146,31 @@ const getStudentsForClass = async (req, res) => {
             'studentData.class': className,
         }).select('name email studentData');
 
-        // If no students or very few students found, add mock data for demo purposes
-        if (students.length < 3) {
-            const mockStudents = [
-                {
-                    _id: 'mock1',
-                    name: 'Rahul Kumar',
-                    email: 'rahul@example.com',
-                    studentData: { usn: '1SI21CS045', class: className }
-                },
-                {
-                    _id: 'mock2',
-                    name: 'Priya Sharma',
-                    email: 'priya@example.com',
-                    studentData: { usn: '1SI21CS048', class: className }
-                },
-                {
-                    _id: 'mock3',
-                    name: 'Amit Singh',
-                    email: 'amit@example.com',
-                    studentData: { usn: '1SI21CS052', class: className }
-                },
-                {
-                    _id: 'mock4',
-                    name: 'Sneha Gupta',
-                    email: 'sneha@example.com',
-                    studentData: { usn: '1SI21CS055', class: className }
-                },
-                {
-                    _id: 'mock5',
-                    name: 'Vikram Reddy',
-                    email: 'vikram@example.com',
-                    studentData: { usn: '1SI21CS058', class: className }
-                },
-                {
-                    _id: 'mock6',
-                    name: 'Anjali Desai',
-                    email: 'anjali@example.com',
-                    studentData: { usn: '1SI21CS061', class: className }
-                },
-                {
-                    _id: 'mock7',
-                    name: 'Arjun Patel',
-                    email: 'arjun@example.com',
-                    studentData: { usn: '1SI21CS064', class: className }
-                },
-                {
-                    _id: 'mock8',
-                    name: 'Meera Iyer',
-                    email: 'meera@example.com',
-                    studentData: { usn: '1SI21CS067', class: className }
-                }
-            ];
-            students = [...students, ...mockStudents];
-        }
-
         res.json(students);
     } catch (error) {
         console.error('Get students error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Get global attendance stats for admin
+// @route   GET /api/attendance/stats
+// @access  Private (Admin)
+const getGlobalStats = async (req, res) => {
+    try {
+        const totalRecords = await Attendance.countDocuments();
+        const presentRecords = await Attendance.countDocuments({ status: 'present' });
+
+        const percentage = totalRecords > 0
+            ? ((presentRecords / totalRecords) * 100).toFixed(1)
+            : 0;
+
+        res.json({
+            totalRecords,
+            presentRecords,
+            percentage
+        });
+    } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
@@ -213,4 +180,6 @@ module.exports = {
     getAttendance,
     getAttendanceReport,
     getStudentsForClass,
+    getClasses,
+    getGlobalStats,
 };

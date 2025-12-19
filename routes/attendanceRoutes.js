@@ -13,5 +13,7 @@ router.post('/mark', protect, markAttendance);
 router.get('/', protect, getAttendance);
 router.get('/report', protect, getAttendanceReport);
 router.get('/students', protect, getStudentsForClass);
+router.get('/classes', protect, getClasses);
+router.get('/stats', protect, getGlobalStats);
 
 module.exports = router;

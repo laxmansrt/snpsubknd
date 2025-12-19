@@ -157,4 +157,18 @@ const bulkRegisterUsers = async (req, res) => {
     }
 };
 
-module.exports = { loginUser, registerUser, getMe, bulkRegisterUsers };
+// @desc    Get all users (Admin only)
+// @route   GET /api/auth/users
+// @access  Private/Admin
+const getUsers = async (req, res) => {
+    try {
+        const { role } = req.query;
+        const query = role ? { role } : {};
+        const users = await User.find(query).select('-password');
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = { loginUser, registerUser, getMe, bulkRegisterUsers, getUsers };

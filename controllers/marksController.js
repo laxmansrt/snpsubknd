@@ -94,4 +94,29 @@ const getMarks = async (req, res) => {
     }
 };
 
-module.exports = { uploadMarks, getMarks };
+// @desc    Get global results stats for admin
+// @route   GET /api/marks/stats
+// @access  Private (Admin)
+const getGlobalStats = async (req, res) => {
+    try {
+        const allMarks = await Marks.find();
+
+        if (allMarks.length === 0) {
+            return res.json({ averagePercentage: 0, totalResults: 0 });
+        }
+
+        const totalObtained = allMarks.reduce((sum, m) => sum + m.obtainedMarks, 0);
+        const totalMax = allMarks.reduce((sum, m) => sum + m.maxMarks, 0);
+
+        const averagePercentage = ((totalObtained / totalMax) * 100).toFixed(1);
+
+        res.json({
+            averagePercentage,
+            totalResults: allMarks.length
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = { uploadMarks, getMarks, getGlobalStats };
