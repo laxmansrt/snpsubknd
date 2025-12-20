@@ -70,10 +70,19 @@ const markAttendance = async (req, res) => {
 // @access  Private
 const getAttendance = async (req, res) => {
     try {
-        const { class: className, subject, date, studentUsn } = req.query;
+        const { class: className, subject, date } = req.query;
+        let { studentUsn } = req.query;
+        const user = req.user;
+
+        // Security: Restrict access based on role
+        if (user.role === 'student') {
+            studentUsn = user.studentData.usn;
+        } else if (user.role === 'parent') {
+            studentUsn = user.parentData.childUsn;
+        }
 
         const query = {};
-        if (className) query.class = className;
+        if (className && (user.role === 'admin' || user.role === 'faculty')) query.class = className;
         if (subject) query.subject = subject;
         if (date) query.date = new Date(date);
         if (studentUsn) query.studentUsn = studentUsn;
@@ -94,11 +103,21 @@ const getAttendance = async (req, res) => {
 // @access  Private
 const getAttendanceReport = async (req, res) => {
     try {
-        const { studentUsn, class: className, startDate, endDate } = req.query;
+        const { class: className, startDate, endDate } = req.query;
+        let { studentUsn } = req.query;
+        const user = req.user;
+
+        // Security: Restrict access based on role
+        if (user.role === 'student') {
+            studentUsn = user.studentData.usn;
+        } else if (user.role === 'parent') {
+            studentUsn = user.parentData.childUsn;
+        }
 
         const query = {};
         if (studentUsn) query.studentUsn = studentUsn;
-        if (className) query.class = className;
+        if (className && (user.role === 'admin' || user.role === 'faculty')) query.class = className;
+
         if (startDate && endDate) {
             query.date = {
                 $gte: new Date(startDate),
@@ -106,7 +125,7 @@ const getAttendanceReport = async (req, res) => {
             };
         }
 
-        const records = await Attendance.find(query);
+        const records = await Attendance.find(query).sort({ date: -1 });
 
         const stats = {
             total: records.length,

@@ -137,6 +137,21 @@ const bulkRegisterUsers = async (req, res) => {
                         department: userData.department,
                         designation: userData.designation,
                     };
+                } else if (userData.role === 'parent') {
+                    let childName = userData.childName;
+
+                    // If childName is missing but childUsn is present, try to find the student
+                    if (!childName && userData.childUsn) {
+                        const student = await User.findOne({ 'studentData.usn': userData.childUsn, role: 'student' });
+                        if (student) {
+                            childName = student.name;
+                        }
+                    }
+
+                    newUser.parentData = {
+                        childUsn: userData.childUsn,
+                        childName: childName || 'Unknown Student',
+                    };
                 }
 
                 await User.create(newUser);
@@ -171,4 +186,66 @@ const getUsers = async (req, res) => {
     }
 };
 
-module.exports = { loginUser, registerUser, getMe, bulkRegisterUsers, getUsers };
+// @desc    Update user profile
+// @route   PUT /api/auth/profile
+// @access  Private
+const updateProfile = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+
+        if (user) {
+            user.name = req.body.name || user.name;
+            user.email = req.body.email || user.email;
+
+            // Update role-specific data if provided (e.g., phone number could be added to schema later)
+            // For now, let's just stick to name and email as per schema
+
+            const updatedUser = await user.save();
+
+            res.json({
+                _id: updatedUser._id,
+                name: updatedUser.name,
+                email: updatedUser.email,
+                role: updatedUser.role,
+                studentData: updatedUser.studentData,
+                facultyData: updatedUser.facultyData,
+                parentData: updatedUser.parentData,
+                token: generateToken(updatedUser._id),
+            });
+        } else {
+            res.status(404).json({ message: 'User not found' });
+        }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Update user password
+// @route   PUT /api/auth/password
+// @access  Private
+const updatePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const user = await User.findById(req.user._id);
+
+        if (user && (await user.matchPassword(currentPassword))) {
+            user.password = newPassword;
+            await user.save();
+            res.json({ message: 'Password updated successfully' });
+        } else {
+            res.status(401).json({ message: 'Invalid current password' });
+        }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = {
+    loginUser,
+    registerUser,
+    getMe,
+    bulkRegisterUsers,
+    getUsers,
+    updateProfile,
+    updatePassword
+};
