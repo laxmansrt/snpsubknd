@@ -21,24 +21,12 @@ const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '10mb' })); // Reduced limit for security
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(apiRateLimiter); // Apply general rate limiting to all routes
-
-// Ensure Database Connection Middleware
-app.use(async (req, res, next) => {
-    try {
-        await connectDB();
-        next();
-    } catch (error) {
-        res.status(503).json({
-            message: 'Database connection is temporarily unavailable.',
-        });
-    }
-});
+app.use(express.json({ limit: '1mb' })); // Strict 1mb limit to prevent DB bloat/RAM exhaustion
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(apiRateLimiter);
 
 // Routes
-app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/auth', require('./middleware/rateLimiter').authLimiter, require('./routes/authRoutes'));
 app.use('/api/lostfound', require('./routes/lostFoundRoutes'));
 app.use('/api/attendance', require('./routes/attendanceRoutes'));
 app.use('/api/announcements', require('./routes/announcementRoutes'));
@@ -48,8 +36,22 @@ app.use('/api/materials', require('./routes/studyMaterialRoutes'));
 app.use('/api/marks', require('./routes/marksRoutes'));
 app.use('/api/ai', require('./routes/aiRoutes'));
 app.use('/api/academics', require('./routes/academicRoutes'));
+app.use('/api/guardian', require('./routes/guardianRoutes'));
 
 const mongoose = require('mongoose');
+const guardian = require('./utils/systemGuardian');
+
+// Initialize System Guardian after DB connection
+mongoose.connection.once('open', async () => {
+    console.log('[System Guardian] Initializing...');
+    try {
+        const initialCheck = await guardian.runHealthCheck();
+        console.log('[System Guardian] Active and monitoring');
+        console.log(`[System Guardian] Database usage: ${initialCheck.prediction?.currentUsage || 'Unknown'}`);
+    } catch (error) {
+        console.error('[System Guardian] Initialization failed:', error.message);
+    }
+});
 
 // Health check
 app.get('/health', (req, res) => {

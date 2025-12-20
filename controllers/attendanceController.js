@@ -70,7 +70,7 @@ const markAttendance = async (req, res) => {
 // @access  Private
 const getAttendance = async (req, res) => {
     try {
-        const { class: className, subject, date } = req.query;
+        const { class: className, subject, date, page = 1, limit = 50 } = req.query;
         let { studentUsn } = req.query;
         const user = req.user;
 
@@ -87,11 +87,28 @@ const getAttendance = async (req, res) => {
         if (date) query.date = new Date(date);
         if (studentUsn) query.studentUsn = studentUsn;
 
+        // Enforce pagination to prevent memory exhaustion
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const maxLimit = Math.min(parseInt(limit), 100); // Cap at 100 records per request
+
         const records = await Attendance.find(query)
             .sort({ date: -1 })
-            .populate('markedBy', 'name email');
+            .limit(maxLimit)
+            .skip(skip)
+            .populate('markedBy', 'name email')
+            .lean(); // Use lean() for better performance
 
-        res.json(records);
+        const total = await Attendance.countDocuments(query);
+
+        res.json({
+            records,
+            pagination: {
+                total,
+                page: parseInt(page),
+                limit: maxLimit,
+                pages: Math.ceil(total / maxLimit)
+            }
+        });
     } catch (error) {
         console.error('Get attendance error:', error);
         res.status(500).json({ message: error.message });
