@@ -21,65 +21,125 @@ try {
  */
 const chatWithAI = async (req, res) => {
     try {
-        const { message, history, context } = req.body;
-        const user = req.user; // May be undefined for guest users
+        const { message, history = [], context } = req.body;
+        const user = req.user; // undefined for landing page users
+        const userRole = user?.role || "guest";
 
         if (!openai) {
-            console.error("OpenAI client not initialized. Check OPENAI_API_KEY.");
-            return res.status(500).json({ message: "AI Assistant is currently misconfigured. Please contact admin." });
+            return res.status(500).json({
+                message: "AI service not configured. Contact administrator.",
+            });
         }
 
-        if (!message) {
-            return res.status(400).json({ message: "Message is required" });
+        if (!message || typeof message !== "string") {
+            return res.status(400).json({ message: "Valid message is required" });
         }
 
-        // 1. Fetch Context if not provided
+        /* ----------------------------------------------------
+           1. HARD SECURITY: Block Private Queries for Guests
+        ---------------------------------------------------- */
+        const restrictedKeywords = [
+            "usn",
+            "attendance",
+            "marks",
+            "internal",
+            "salary",
+            "phone",
+            "email",
+            "employee id",
+            "student details",
+            "faculty details",
+        ];
+
+        if (
+            userRole === "guest" &&
+            restrictedKeywords.some(k => message.toLowerCase().includes(k))
+        ) {
+            return res.json({
+                reply:
+                    "Sorry, that information is private and not accessible to the public. Please log in to access your personal academic data.",
+            });
+        }
+
+        /* ----------------------------------------------------
+           2. Fetch Context (Public vs Role-Based)
+        ---------------------------------------------------- */
         let portalContext = context;
+
         if (!portalContext) {
             try {
                 const query = { isActive: true };
-                if (user) {
-                    query.targetAudience = { $in: [user.role, 'all'] };
+
+                if (userRole === "guest") {
+                    // Map 'guest' to 'all' for public announcements
+                    query.targetAudience = "all";
                 } else {
-                    query.targetAudience = 'all';
+                    query.targetAudience = { $in: [userRole, "all"] };
                 }
 
-                const announcements = await Announcement.find(query).sort({ publishedAt: -1 }).limit(5);
+                const announcements = await Announcement.find(query)
+                    .sort({ publishedAt: -1 })
+                    .limit(5)
+                    .select("title content category");
 
-                portalContext = announcements.map(a =>
-                    `Title: ${a.title}, Content: ${a.content}, Category: ${a.category}`
-                ).join("\n");
-            } catch (ctxError) {
-                console.error("Error fetching portal context:", ctxError);
-                portalContext = "Error fetching portal context.";
+                portalContext = announcements
+                    .map(a =>
+                        `Title: ${a.title}\nCategory: ${a.category}\nContent: ${a.content.substring(0, 300)}`
+                    )
+                    .join("\n\n");
+            } catch (error) {
+                console.error("Context fetch error:", error);
+                portalContext = "No portal context available.";
             }
         }
 
-        // 2. Prepare Messages for OpenAI
-        const safeHistory = Array.isArray(history) ? history : [];
-        const userRole = user ? user.role : 'guest';
+        /* ----------------------------------------------------
+           3. Role-Based AI Access Rules
+        ---------------------------------------------------- */
+        let accessRules = "";
 
+        if (userRole === "guest") {
+            accessRules = `
+This is a PUBLIC VISITOR.
+Rules:
+- Answer using ONLY public college information.
+- NEVER reveal student, faculty, or admin data.
+- Politely refuse restricted questions about personal data.
+`;
+        } else {
+            accessRules = `
+This is an AUTHENTICATED ${userRole.toUpperCase()}.
+Rules:
+- Answer only within role-based permissions.
+- Do not reveal data of other users.
+- Student Info: USN ${user.studentData?.usn || 'N/A'}, Class ${user.studentData?.class || 'N/A'}, Dept ${user.studentData?.department || 'N/A'}
+`;
+        }
+
+        /* ----------------------------------------------------
+           4. Prepare Messages for AI
+        ---------------------------------------------------- */
         const messages = [
             { role: "system", content: collegeAIPrompt },
+            { role: "system", content: accessRules },
             {
                 role: "system",
-                content: `User Role: ${userRole}. 
-                ${userRole === 'student' ? `Student Info: USN ${user.studentData?.usn || 'N/A'}, Class ${user.studentData?.class || 'N/A'}, Dept ${user.studentData?.department || 'N/A'}` : ''}
-                ${userRole === 'faculty' ? `Faculty Info: ID ${user.facultyData?.employeeId || 'N/A'}, Dept ${user.facultyData?.department || 'N/A'}` : ''}
-                ${userRole === 'guest' ? `Visitor Info: This is a guest user on the landing page.` : ''}`
+                content: `College Portal Context:\n${portalContext || "No additional context provided."}`,
             },
-            {
-                role: "system",
-                content: `Context from portal data:\n${portalContext || "No additional context provided."}`
-            },
-            ...safeHistory.map(h => ({
-                role: h.role === 'user' ? 'user' : 'assistant',
-                content: (h.parts && h.parts[0] && h.parts[0].text) || (typeof h.content === 'string' ? h.content : "")
-            })).filter(m => m.content),
-            { role: "user", content: message }
+            ...(Array.isArray(history)
+                ? history.map(h => ({
+                    role: h.role === "user" ? "user" : "assistant",
+                    content:
+                        h?.parts?.[0]?.text ||
+                        (typeof h.content === "string" ? h.content : ""),
+                })).filter(m => m.content)
+                : []),
+            { role: "user", content: message },
         ];
 
-        // 3. Generate Completion using OpenAI
+        /* ----------------------------------------------------
+           5. Generate AI Response
+        ---------------------------------------------------- */
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: messages,
@@ -92,12 +152,16 @@ const chatWithAI = async (req, res) => {
 
         const reply = completion.choices[0].message.content;
 
-        res.json({ reply });
+        return res.json({ reply });
+
     } catch (error) {
         console.error("AI Chat Error:", error);
-        res.status(500).json({
-            message: "AI Assistant is currently unavailable. Please try again later.",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        return res.status(500).json({
+            message: "AI Assistant is temporarily unavailable.",
+            error:
+                process.env.NODE_ENV === "development"
+                    ? error.message
+                    : undefined,
         });
     }
 };

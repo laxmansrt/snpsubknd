@@ -40,6 +40,7 @@ app.use('/api/hostel', require('./routes/hostelRoutes'));
 app.use('/api/materials', require('./routes/studyMaterialRoutes'));
 app.use('/api/marks', require('./routes/marksRoutes'));
 app.use('/api/ai', require('./routes/aiRoutes'));
+app.use('/api/academics', require('./routes/academicRoutes'));
 
 const mongoose = require('mongoose');
 
