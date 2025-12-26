@@ -6,16 +6,22 @@ const Hostel = require("../models/Hostel");
 const User = require("../models/User");
 
 // Initialize Gemini
+// Initialize Gemini
 let genAI;
-let model;
-try {
-    if (process.env.GEMINI_API_KEY) {
-        genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+
+const initGemini = () => {
+    try {
+        if (process.env.GEMINI_API_KEY) {
+            genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+            return genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+        }
+    } catch (error) {
+        console.error("Failed to initialize Google AI client:", error);
     }
-} catch (error) {
-    console.error("Failed to initialize Google AI client:", error);
-}
+    return null;
+};
+
+let model = initGemini();
 
 const asyncHandler = require('express-async-handler');
 const cacheUtil = require('../utils/cache');
@@ -31,8 +37,13 @@ const chatWithAI = asyncHandler(async (req, res) => {
     const userRole = user?.role || "guest";
 
     if (!model) {
-        res.status(500);
-        throw new Error("AI service not configured. Contact administrator.");
+        // Try initializing again (in case env var was added later)
+        model = initGemini();
+
+        if (!model) {
+            res.status(500);
+            throw new Error("AI service not configured. Contact administrator.");
+        }
     }
 
     if (!message && !image) {
