@@ -1,20 +1,20 @@
-const OpenAI = require("openai");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const collegeAIPrompt = require("../prompts/collegeAIPrompt");
 const Announcement = require("../models/Announcement");
 const Transport = require("../models/Transport");
 const Hostel = require("../models/Hostel");
 const User = require("../models/User");
 
-// Initialize OpenAI
-let openai;
+// Initialize Gemini
+let genAI;
+let model;
 try {
-    if (process.env.OPENAI_API_KEY) {
-        openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
+    if (process.env.GEMINI_API_KEY) {
+        genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     }
 } catch (error) {
-    console.error("Failed to initialize OpenAI client:", error);
+    console.error("Failed to initialize Google AI client:", error);
 }
 
 const asyncHandler = require('express-async-handler');
@@ -30,7 +30,7 @@ const chatWithAI = asyncHandler(async (req, res) => {
     const user = req.user;
     const userRole = user?.role || "guest";
 
-    if (!openai) {
+    if (!model) {
         res.status(500);
         throw new Error("AI service not configured. Contact administrator.");
     }
@@ -126,41 +126,63 @@ const chatWithAI = asyncHandler(async (req, res) => {
         : `AUTHENTICATED ${userRole.toUpperCase()}. Rules: Role-based permissions only. Student Info: USN ${user.studentData?.usn || 'N/A'}, Dept ${user.studentData?.department || 'N/A'}`;
 
     /* ----------------------------------------------------
-       4. Prepare Messages for AI
+       3. Prepare Chat History for Gemini
     ---------------------------------------------------- */
-    const userContent = [];
-    if (message) userContent.push({ type: "text", text: message });
-    if (image) userContent.push({ type: "image_url", image_url: { url: image } });
+    const historyParts = Array.isArray(history) ? history.map(h => ({
+        role: h.role === "user" ? "user" : "model",
+        parts: [{ text: h.parts?.[0]?.text || h.content || "" }]
+    })).slice(-6) : [];
 
-    const messages = [
-        { role: "system", content: collegeAIPrompt },
-        { role: "system", content: accessRules },
-        { role: "system", content: `College Portal Context:\n${portalContext || "No context available."}` },
-        ...(Array.isArray(history) ? history.map(h => ({
-            role: h.role === "user" ? "user" : "assistant",
-            content: h?.parts?.[0]?.text || (typeof h.content === "string" ? h.content : "")
-        })).filter(m => m.content).slice(-6) : []),
-        { role: "user", content: userContent }
-    ];
+    // Construct System Instruction (Knowledge + Rules + Context)
+    const systemInstruction = `
+${collegeAIPrompt}
+
+${accessRules}
+
+CURRENT CONTEXT FROM PORTAL:
+${portalContext || "No dynamic context available."}
+`;
 
     /* ----------------------------------------------------
-       5. Generate AI Response with Timeout
+       4. Generate AI Response with Timeout
     ---------------------------------------------------- */
     try {
         const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('AI_TIMEOUT')), 25000) // Vision tasks might take longer
+            setTimeout(() => reject(new Error('AI_TIMEOUT')), 25000)
         );
 
-        const completionPromise = openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: messages,
-            max_tokens: 600,
-            temperature: 0.7,
+        // Start Chat Session
+        const chat = model.startChat({
+            history: historyParts,
+            systemInstruction: systemInstruction,
+            generationConfig: {
+                maxOutputTokens: 1000,
+            },
         });
 
-        const completion = await Promise.race([completionPromise, timeoutPromise]);
+        let result;
+        if (image) {
+            // If image is present, we must send it as a part. startChat doesn't support images in history well in all SDK versions,
+            // so we send the image in the current sendMessage call.
+            // Assumption: 'image' is a base64 string from frontend (data:image/jpeg;base64,...)
+            const base64Data = image.split(',')[1];
+            const mimeType = image.split(':')[0].split(';')[0];
 
-        const reply = completion.choices[0]?.message?.content;
+            const imagePart = {
+                inlineData: {
+                    data: base64Data,
+                    mimeType: mimeType
+                }
+            };
+
+            result = await Promise.race([chat.sendMessage([message, imagePart]), timeoutPromise]);
+        } else {
+            result = await Promise.race([chat.sendMessage(message), timeoutPromise]);
+        }
+
+        const response = await result.response;
+        const reply = response.text();
+
         if (!reply) throw new Error("EMPTY_RESPONSE");
 
         res.json({ reply });
