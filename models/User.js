@@ -24,6 +24,10 @@ const userSchema = new mongoose.Schema({
         required: true,
         trim: true,
     },
+    phone: {
+        type: String,
+        trim: true,
+    },
     // Role-specific data
     studentData: {
         usn: { type: String, trim: true },
