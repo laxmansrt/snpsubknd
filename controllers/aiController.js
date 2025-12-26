@@ -1,6 +1,9 @@
 const OpenAI = require("openai");
 const collegeAIPrompt = require("../prompts/collegeAIPrompt");
 const Announcement = require("../models/Announcement");
+const Transport = require("../models/Transport");
+const Hostel = require("../models/Hostel");
+const User = require("../models/User");
 
 // Initialize OpenAI
 let openai;
@@ -52,31 +55,67 @@ const chatWithAI = asyncHandler(async (req, res) => {
     }
 
     /* ----------------------------------------------------
-       2. Fetch Context with Caching
+       2. Fetch Context with Dynamic Data Injection
     ---------------------------------------------------- */
     let portalContext = context;
 
     if (!portalContext) {
-        const cacheKey = `announcements_${userRole}`;
+        const cacheKey = `portal_context_${userRole}_${user?._id || 'guest'}_${message?.substring(0, 20)}`;
 
         portalContext = await cacheUtil.getOrSet(cacheKey, async () => {
-            const query = { isActive: true };
-            if (userRole === "guest") {
-                query.targetAudience = "all";
-            } else {
-                query.targetAudience = { $in: [userRole, "all"] };
-            }
+            let contextParts = [];
 
-            const announcements = await Announcement.find(query)
+            // A. Base Announcements
+            const announceQuery = { isActive: true };
+            if (userRole === "guest") announceQuery.targetAudience = "all";
+            else announceQuery.targetAudience = { $in: [userRole, "all"] };
+
+            const announcements = await Announcement.find(announceQuery)
                 .sort({ publishedAt: -1 })
-                .limit(5)
+                .limit(3)
                 .select("title content category -_id")
                 .lean();
 
-            return announcements
-                .map(a => `Title: ${a.title}\nCategory: ${a.category}\nContent: ${a.content.substring(0, 200)}`)
-                .join("\n\n");
-        }, 600);
+            if (announcements.length > 0) {
+                contextParts.push("### RECENT ANNOUNCEMENTS ###\n" + announcements.map(a => `- [${a.category}] ${a.title}: ${a.content.substring(0, 100)}...`).join("\n"));
+            }
+
+            // B. Dynamic Transport Context (Keywords: bus, route, transport, travel)
+            const transportKeywords = ["bus", "route", "transport", "travel", "pickup", "stop"];
+            if (message && transportKeywords.some(k => message.toLowerCase().includes(k))) {
+                const routes = await Transport.find().limit(10).select("routeName routeNumber stops -_id").lean();
+                if (routes.length > 0) {
+                    contextParts.push("### LIVE TRANSPORT ROUTES ###\n" + routes.map(r => `Route ${r.routeNumber} (${r.routeName}): Stops at ${r.stops.join(" -> ")}`).join("\n"));
+                }
+            }
+
+            // C. Dynamic Hostel Context (Keywords: hostel, room, mess, food, menu)
+            const hostelKeywords = ["hostel", "room", "mess", "food", "menu", "allotment", "warden"];
+            if (message && hostelKeywords.some(k => message.toLowerCase().includes(k))) {
+                const rooms = await Hostel.find().limit(10).select("roomNumber floor blockName status type -_id").lean();
+                const availableCount = await Hostel.countDocuments({ status: "available" });
+
+                contextParts.push(`### HOSTEL AVAILABILITY ###\nTotal Available Rooms: ${availableCount}\nAvailable Rooms Preview: ` +
+                    rooms.filter(r => r.status === "available").slice(0, 5).map(r => `Room ${r.roomNumber} (${r.type}, ${r.blockName})`).join(", "));
+
+                // Get mess menu from any room
+                const messRoom = await Hostel.findOne({ messMenu: { $exists: true, $ne: [] } }).select("messMenu -_id").lean();
+                if (messRoom?.messMenu) {
+                    contextParts.push("### WEEKLY MESS MENU ###\n" + messRoom.messMenu.map(m => `${m.day}: ${m.breakfast}, ${m.lunch}, ${m.dinner}`).join("\n"));
+                }
+            }
+
+            // D. User-Specific Context (Fees, Personal Data)
+            if (userRole === "student" && user?._id) {
+                const fullUser = await User.findById(user._id).select("studentData -_id").lean();
+                if (fullUser?.studentData) {
+                    const sd = fullUser.studentData;
+                    contextParts.push(`### YOUR ACADEMIC STATUS ###\nUSN: ${sd.usn}\nDept: ${sd.department}\nSem: ${sd.semester}\nAttendance: ${sd.attendance}%\nCGPA: ${sd.cgpa}`);
+                }
+            }
+
+            return contextParts.join("\n\n");
+        }, 300); // 5 minute cache
     }
 
     /* ----------------------------------------------------
