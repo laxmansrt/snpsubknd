@@ -180,6 +180,7 @@ const getUsers = async (req, res) => {
         const { role } = req.query;
         const query = role ? { role } : {};
         const users = await User.find(query).select('-password');
+        console.log(`API/getUsers: Fetched ${users.length} users. Query:`, query);
         res.json(users);
     } catch (error) {
         res.status(500).json({ message: error.message });
