@@ -11,12 +11,16 @@ const uploadMaterial = async (req, res) => {
             return res.status(400).json({ message: 'Please provide all required fields' });
         }
 
-        // CRITICAL: Prevent Base64 bloat - Reject files stored as data URIs
-        if (fileUrl.startsWith('data:') || fileUrl.length > 2048) {
+        // Limit Base64 uploads to ~5MB (about 3.7MB file size)
+        if (fileUrl.startsWith('data:') && fileUrl.length > 5 * 1024 * 1024) {
             return res.status(400).json({
-                message: 'Direct file uploads not allowed. Please use external storage (Google Drive, Dropbox) and provide the link.',
-                maxUrlLength: 2048
+                message: 'Internal file upload too large. Max 5MB for direct upload.'
             });
+        }
+
+        // If it's not a data URI, check URL length (for safety)
+        if (!fileUrl.startsWith('data:') && fileUrl.length > 2048) {
+            return res.status(400).json({ message: 'URL too long. Max 2048 characters.' });
         }
 
         const material = await StudyMaterial.create({
