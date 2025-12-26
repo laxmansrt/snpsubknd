@@ -34,6 +34,7 @@ app.use('/api/transport', require('./routes/transportRoutes'));
 app.use('/api/hostel', require('./routes/hostelRoutes'));
 app.use('/api/materials', require('./routes/studyMaterialRoutes'));
 app.use('/api/marks', require('./routes/marksRoutes'));
+app.use('/api/exams', require('./routes/examRoutes'));
 app.use('/api/ai', require('./routes/aiRoutes'));
 app.use('/api/academics', require('./routes/academicRoutes'));
 app.use('/api/guardian', require('./routes/guardianRoutes'));

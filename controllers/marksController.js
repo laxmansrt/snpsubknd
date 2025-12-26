@@ -1,5 +1,6 @@
 const Marks = require('../models/Marks');
 const User = require('../models/User');
+const { notifyResults } = require('../utils/notificationService');
 
 // @desc    Upload marks for students
 // @route   POST /api/marks
@@ -119,4 +120,41 @@ const getGlobalStats = async (req, res) => {
     }
 };
 
-module.exports = { uploadMarks, getMarks, getGlobalStats };
+// @desc    Publish results and notify students
+// @route   POST /api/marks/publish
+// @access  Private (Admin)
+const publishResults = async (req, res) => {
+    try {
+        const { branch, semester } = req.body;
+
+        // Find students in this branch/sem
+        const students = await User.find({
+            role: 'student',
+            'studentData.department': branch,
+            'studentData.semester': semester
+        });
+
+        if (students.length === 0) {
+            return res.status(404).json({ message: 'No students found for this selection' });
+        }
+
+        let sentCount = 0;
+        for (const student of students) {
+            // Check if student has marks for this sem
+            const studentMarks = await Marks.findOne({ studentId: student._id, class: new RegExp(`${branch}.*Sem ${semester}`, 'i') });
+
+            if (studentMarks) {
+                await notifyResults(student, { semester: `${branch} - Sem ${semester}` });
+                sentCount++;
+            }
+        }
+
+        res.json({ message: `Results published. Notifications sent to ${sentCount} students.` });
+    } catch (error) {
+        console.error('Publish results error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = { uploadMarks, getMarks, getGlobalStats, publishResults };
+
