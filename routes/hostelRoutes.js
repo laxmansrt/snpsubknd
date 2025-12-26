@@ -12,14 +12,14 @@ const {
     getMyApplication,
     updateApplicationStatus,
 } = require('../controllers/hostelController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, admin } = require('../middleware/authMiddleware');
 
 router.get('/', protect, getRooms);
 router.get('/mess/menu', protect, getMessMenu);
 router.get('/application/my', protect, getMyApplication);
-router.get('/applications', protect, getApplications);
+router.get('/applications', protect, admin, getApplications);
 router.post('/application', protect, submitApplication);
-router.put('/application/:id', protect, updateApplicationStatus);
+router.put('/application/:id', protect, admin, updateApplicationStatus);
 router.get('/:id', protect, getRoomById);
 router.post('/', protect, createRoom);
 router.put('/:id', protect, updateRoom);
