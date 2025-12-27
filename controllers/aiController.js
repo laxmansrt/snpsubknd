@@ -4,6 +4,8 @@ const Announcement = require("../models/Announcement");
 const Transport = require("../models/Transport");
 const Hostel = require("../models/Hostel");
 const User = require("../models/User");
+const Department = require("../models/Department");
+const Subject = require("../models/Subject");
 const asyncHandler = require('express-async-handler');
 const cacheUtil = require('../utils/cache');
 
@@ -97,7 +99,21 @@ const chatWithAI = asyncHandler(async (req, res) => {
                 }
             }
 
-            // D. User-Specific Context
+            // D. Academic & General University Info (Keywords: course, department, degree, study, engineering, science, art)
+            const academicKeywords = ["course", "department", "degree", "study", "engineering", "science", "art", "subject", "available", "offer"];
+            if (message && academicKeywords.some(k => message.toLowerCase().includes(k))) {
+                const depts = await Department.find().select("name code duration hod -_id").lean();
+                if (depts.length > 0) {
+                    contextParts.push("### AVAILABLE DEPARTMENTS & COURSES ###\n" + depts.map(d => `- ${d.name} (${d.code}): ${d.duration} program, HOD: ${d.hod}`).join("\n"));
+                }
+
+                const subs = await Subject.find().limit(10).select("name code department -_id").lean();
+                if (subs.length > 0) {
+                    contextParts.push("### SAMPLE SUBJECTS OFFERED ###\n" + subs.map(s => `- ${s.name} (${s.code}) under ${s.department}`).join("\n"));
+                }
+            }
+
+            // E. User-Specific Context
             if (userRole === "student" && user?._id) {
                 const fullUser = await User.findById(user._id).select("studentData -_id").lean();
                 if (fullUser?.studentData) {
