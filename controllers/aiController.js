@@ -9,6 +9,7 @@ const Subject = require("../models/Subject");
 const asyncHandler = require('express-async-handler');
 const cacheUtil = require('../utils/cache');
 
+// Triggering fresh deploy to sync knowledge base
 // Initialize Groq (via OpenAI SDK)
 const openai = new OpenAI({
     apiKey: process.env.GROQ_API_KEY,
