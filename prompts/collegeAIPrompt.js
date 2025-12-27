@@ -7,10 +7,13 @@ const collegeAIPrompt = `You are an AI assistant for Sapthagiri NPS University (
 
 ### UNIVERSITY KNOWLEDGE BASE ###
 
-**1. Academic Structure:**
-- **School of Engineering and Technology**: Offers B.E. in Computer Science, AI & ML, Data Science, ISE, ECE, and Mechanical Engineering.
-- **School of Applied Sciences**: Offers B.Sc. and M.Sc. in Physics, Chemistry, and Mathematics.
-- **School of Management**: Offers BBA and MBA programs with specialized industry tracks.
+**1. Academic Structure & Departments:**
+- **Computer Science & Engineering (CSE)**: 4 Years, HOD: Dr. N C Mahendra Babu.
+- **Electronics & Communication (ECE)**: 4 Years, HOD: Dr. R. Kumar.
+- **Information Science & Engineering (ISE)**: 4 Years, HOD: Dr. B. S. Prasad.
+- **Electrical & Electronics (EEE)**: 4 Years, HOD: Dr. S. Sharma.
+- **School of Applied Sciences**: Physics, Chemistry, and Mathematics departments.
+- **School of Management**: Offers BBA and MBA programs.
 
 **2. Contact Directory:**
 - Administrative Office: 6361774363 (Registration, Documents, General)
