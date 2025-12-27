@@ -6,15 +6,18 @@ const generateToken = require('../utils/generateToken');
 // @access  Public
 const loginUser = async (req, res) => {
     try {
-        const { email, password, role } = req.body;
+        const { email, password, role } = req.body; // 'email' is used as a general identifier here
 
-        console.log('Login attempt:', { email, role, hasPassword: !!password });
+        console.log('Login attempt:', { identifier: email, role, hasPassword: !!password });
 
-        // Find user by email and role
-        const user = await User.findOne({ email, role });
+        // Find user by email OR phone and role
+        const user = await User.findOne({
+            $or: [{ email: email }, { phone: email }],
+            role: role
+        });
 
         console.log('User found:', user ? 'Yes' : 'No');
-        console.log('User details:', user ? { email: user.email, role: user.role, hasPassword: !!user.password } : 'N/A');
+        console.log('User details:', user ? { email: user.email, phone: user.phone, role: user.role } : 'N/A');
 
         if (user && (await user.matchPassword(password))) {
             res.json({
