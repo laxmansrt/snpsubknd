@@ -1,30 +1,17 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const OpenAI = require("openai");
 const collegeAIPrompt = require("../prompts/collegeAIPrompt");
 const Announcement = require("../models/Announcement");
 const Transport = require("../models/Transport");
 const Hostel = require("../models/Hostel");
 const User = require("../models/User");
-
-// Initialize Gemini
-// Initialize Gemini
-let genAI;
-
-const initGemini = () => {
-    try {
-        if (process.env.GEMINI_API_KEY) {
-            genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-            return genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-        }
-    } catch (error) {
-        console.error("Failed to initialize Google AI client:", error);
-    }
-    return null;
-};
-
-let model = initGemini();
-
 const asyncHandler = require('express-async-handler');
 const cacheUtil = require('../utils/cache');
+
+// Initialize Groq (via OpenAI SDK)
+const openai = new OpenAI({
+    apiKey: process.env.GROQ_API_KEY,
+    baseURL: "https://api.groq.com/openai/v1"
+});
 
 /**
  * @desc    College AI Chat Assistant
@@ -36,14 +23,9 @@ const chatWithAI = asyncHandler(async (req, res) => {
     const user = req.user;
     const userRole = user?.role || "guest";
 
-    if (!model) {
-        // Try initializing again (in case env var was added later)
-        model = initGemini();
-
-        if (!model) {
-            res.status(500);
-            throw new Error("AI service not configured. Contact administrator.");
-        }
+    if (!process.env.GROQ_API_KEY) {
+        res.status(500);
+        throw new Error("AI service not configured. GROQ_API_KEY missing.");
     }
 
     if (!message && !image) {
@@ -91,7 +73,7 @@ const chatWithAI = asyncHandler(async (req, res) => {
                 contextParts.push("### RECENT ANNOUNCEMENTS ###\n" + announcements.map(a => `- [${a.category}] ${a.title}: ${a.content.substring(0, 100)}...`).join("\n"));
             }
 
-            // B. Dynamic Transport Context (Keywords: bus, route, transport, travel)
+            // B. Dynamic Transport Context
             const transportKeywords = ["bus", "route", "transport", "travel", "pickup", "stop"];
             if (message && transportKeywords.some(k => message.toLowerCase().includes(k))) {
                 const routes = await Transport.find().limit(10).select("routeName routeNumber stops -_id").lean();
@@ -100,7 +82,7 @@ const chatWithAI = asyncHandler(async (req, res) => {
                 }
             }
 
-            // C. Dynamic Hostel Context (Keywords: hostel, room, mess, food, menu)
+            // C. Dynamic Hostel Context
             const hostelKeywords = ["hostel", "room", "mess", "food", "menu", "allotment", "warden"];
             if (message && hostelKeywords.some(k => message.toLowerCase().includes(k))) {
                 const rooms = await Hostel.find().limit(10).select("roomNumber floor blockName status type -_id").lean();
@@ -109,14 +91,13 @@ const chatWithAI = asyncHandler(async (req, res) => {
                 contextParts.push(`### HOSTEL AVAILABILITY ###\nTotal Available Rooms: ${availableCount}\nAvailable Rooms Preview: ` +
                     rooms.filter(r => r.status === "available").slice(0, 5).map(r => `Room ${r.roomNumber} (${r.type}, ${r.blockName})`).join(", "));
 
-                // Get mess menu from any room
                 const messRoom = await Hostel.findOne({ messMenu: { $exists: true, $ne: [] } }).select("messMenu -_id").lean();
                 if (messRoom?.messMenu) {
                     contextParts.push("### WEEKLY MESS MENU ###\n" + messRoom.messMenu.map(m => `${m.day}: ${m.breakfast}, ${m.lunch}, ${m.dinner}`).join("\n"));
                 }
             }
 
-            // D. User-Specific Context (Fees, Personal Data)
+            // D. User-Specific Context
             if (userRole === "student" && user?._id) {
                 const fullUser = await User.findById(user._id).select("studentData -_id").lean();
                 if (fullUser?.studentData) {
@@ -130,21 +111,17 @@ const chatWithAI = asyncHandler(async (req, res) => {
     }
 
     /* ----------------------------------------------------
-       3. Role-Based AI Access Rules
+       3. Prepare Chat History for Groq
     ---------------------------------------------------- */
     const accessRules = userRole === "guest"
         ? `PUBLIC VISITOR. Rules: Only public info. NEVER reveal personal data. Refuse restricted questions.`
         : `AUTHENTICATED ${userRole.toUpperCase()}. Rules: Role-based permissions only. Student Info: USN ${user.studentData?.usn || 'N/A'}, Dept ${user.studentData?.department || 'N/A'}`;
 
-    /* ----------------------------------------------------
-       3. Prepare Chat History for Gemini
-    ---------------------------------------------------- */
-    const historyParts = Array.isArray(history) ? history.map(h => ({
-        role: h.role === "user" ? "user" : "model",
-        parts: [{ text: h.parts?.[0]?.text || h.content || "" }]
+    const validHistory = Array.isArray(history) ? history.map(h => ({
+        role: h.role === "user" ? "user" : "assistant",
+        content: h.parts?.[0]?.text || h.content || ""
     })).slice(-6) : [];
 
-    // Construct System Instruction (Knowledge + Rules + Context)
     const systemInstruction = `
 ${collegeAIPrompt}
 
@@ -154,58 +131,45 @@ CURRENT CONTEXT FROM PORTAL:
 ${portalContext || "No dynamic context available."}
 `;
 
+    const messages = [
+        { role: "system", content: systemInstruction },
+        ...validHistory
+    ];
+
+    if (image) {
+        // Groq text models (like llama-3.3-70b-versatile) do not support vision content blocks.
+        // We strip the image and add a friendly note to the response later if needed,
+        // or just process the text.
+        messages.push({
+            role: "user",
+            content: (message || "Analyze this image") + " (Note: User sent an image, but vision is currently disabled. Process based on text only.)"
+        });
+    } else {
+        messages.push({ role: "user", content: message });
+    }
+
     /* ----------------------------------------------------
-       4. Generate AI Response with Timeout
+       4. Generate AI Response
     ---------------------------------------------------- */
     try {
-        const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('AI_TIMEOUT')), 25000)
-        );
-
-        // Start Chat Session
-        const chat = model.startChat({
-            history: historyParts,
-            systemInstruction: systemInstruction,
-            generationConfig: {
-                maxOutputTokens: 1000,
-            },
+        const response = await openai.chat.completions.create({
+            model: "llama-3.3-70b-versatile", // Validated working model
+            messages: messages,
+            max_tokens: 500,
         });
 
-        let result;
-        if (image) {
-            // If image is present, we must send it as a part. startChat doesn't support images in history well in all SDK versions,
-            // so we send the image in the current sendMessage call.
-            // Assumption: 'image' is a base64 string from frontend (data:image/jpeg;base64,...)
-            const base64Data = image.split(',')[1];
-            const mimeType = image.split(':')[0].split(';')[0];
-
-            const imagePart = {
-                inlineData: {
-                    data: base64Data,
-                    mimeType: mimeType
-                }
-            };
-
-            result = await Promise.race([chat.sendMessage([message, imagePart]), timeoutPromise]);
-        } else {
-            result = await Promise.race([chat.sendMessage(message), timeoutPromise]);
-        }
-
-        const response = await result.response;
-        const reply = response.text();
+        const reply = response.choices[0]?.message?.content;
 
         if (!reply) throw new Error("EMPTY_RESPONSE");
 
         res.json({ reply });
 
     } catch (error) {
-        console.error(`[AI vision Error] ${error.message}`);
-        let fallbackReply = "I'm sorry, I'm having trouble analyzing that request right now. Please try again.";
+        console.error(`[AI Error] ${error.message}`);
 
-        if (error.message === 'AI_TIMEOUT') {
-            fallbackReply = "The analysis took too long. Please try with a smaller image or shorter question.";
-        } else if (error.message.includes('rate_limit')) {
-            fallbackReply = "I'm receiving too many visual requests right now. Please wait a minute.";
+        let fallbackReply = "I'm sorry, I'm having trouble analyzing that request right now. Please try again.";
+        if (error.status === 401) {
+            fallbackReply = "Server configuration error: Invalid AI credentials.";
         }
 
         res.json({
