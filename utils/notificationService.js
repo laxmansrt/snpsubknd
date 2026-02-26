@@ -12,17 +12,38 @@ const sendEmail = async (to, subject, html) => {
     return true;
 };
 
-// SMS Transport via SMSIndiaHub API
+// SMS Transport via Fast2SMS API
 const sendSMS = async (toPhoneNumber, text) => {
     try {
-        const apiKey = 'LH8Vs2hVZWa0BqVTjFHfKbGynmdweW3k'; // Provided by User
-        const senderId = 'SNPSUP'; // Default Sender ID
-        // SMSIndiaHub API URL
-        const url = `http://cloud.smsindiahub.in/api/mt/SendSMS?APIKey=${apiKey}&senderid=${senderId}&channel=2&DCS=0&flashsms=0&number=${toPhoneNumber}&text=${encodeURIComponent(text)}&route=1`;
+        const apiKey = '6y7AF5OLo1PfgB2QXkbR4suZCHcihazNwWMqvnDEeJrmGU0Ixl0p54iAdSgobMV8sBRzZaj1w27OnLqE'; // Fast2SMS API Key
 
-        const response = await fetch(url);
+        // Fast2SMS requires comma-separated numbers without the country code for bulk routing, but works fine with standard 10 digit Indian numbers
+        const cleanNumber = toPhoneNumber.replace('+91', '').trim();
+
+        const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+            method: 'POST',
+            headers: {
+                'authorization': apiKey,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                route: 'v3',
+                sender_id: 'TXTIND', // Default Fast2SMS free sender ID
+                message: text,
+                language: 'english',
+                flash: 0,
+                numbers: cleanNumber
+            })
+        });
+
         const data = await response.json();
-        console.log(`[SMS SENT VIA SMSIndiaHub] To: ${toPhoneNumber} | Response:`, data);
+        console.log(`[SMS SENT VIA Fast2SMS] To: ${cleanNumber} | Response:`, data);
+
+        if (data.return === false) {
+            console.error("[Fast2SMS Error from API]:", data.message);
+            return false;
+        }
+
         return true;
     } catch (error) {
         console.error("[SMS SEND FAILED]:", error);
