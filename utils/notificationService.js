@@ -12,10 +12,22 @@ const sendEmail = async (to, subject, html) => {
     return true;
 };
 
-// Mock SMS Transport (logs to console)
-const sendSMS = async (to, text) => {
-    console.log(`[SMS SENT] To: ${to} | Message: ${text}`);
-    return true;
+// SMS Transport via SMSIndiaHub API
+const sendSMS = async (toPhoneNumber, text) => {
+    try {
+        const apiKey = 'LH8Vs2hVZWa0BqVTjFHfKbGynmdweW3k'; // Provided by User
+        const senderId = 'SNPSUP'; // Default Sender ID
+        // SMSIndiaHub API URL
+        const url = `http://cloud.smsindiahub.in/api/mt/SendSMS?APIKey=${apiKey}&senderid=${senderId}&channel=2&DCS=0&flashsms=0&number=${toPhoneNumber}&text=${encodeURIComponent(text)}&route=1`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+        console.log(`[SMS SENT VIA SMSIndiaHub] To: ${toPhoneNumber} | Response:`, data);
+        return true;
+    } catch (error) {
+        console.error("[SMS SEND FAILED]:", error);
+        return false;
+    }
 };
 
 const notifyResults = async (student, resultsData) => {
