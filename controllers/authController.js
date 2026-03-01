@@ -244,6 +244,57 @@ const updatePassword = async (req, res) => {
     }
 };
 
+// @desc    Delete a user (Admin only)
+// @route   DELETE /api/auth/users/:id
+// @access  Private/Admin
+const deleteUser = async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        if (user._id.toString() === req.user._id.toString()) {
+            return res.status(400).json({ message: 'Cannot delete your own account' });
+        }
+        await User.findByIdAndDelete(req.params.id);
+        res.json({ message: 'User deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Update a user (Admin only)
+// @route   PUT /api/auth/users/:id
+// @access  Private/Admin
+const updateUser = async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const { name, email, role, studentData, facultyData, phone } = req.body;
+        if (name) user.name = name;
+        if (email) user.email = email;
+        if (role) user.role = role;
+        if (phone) user.phone = phone;
+        if (studentData) user.studentData = { ...user.studentData?.toObject?.() || {}, ...studentData };
+        if (facultyData) user.facultyData = { ...user.facultyData?.toObject?.() || {}, ...facultyData };
+
+        const updatedUser = await user.save();
+        res.json({
+            _id: updatedUser._id,
+            name: updatedUser.name,
+            email: updatedUser.email,
+            role: updatedUser.role,
+            studentData: updatedUser.studentData,
+            facultyData: updatedUser.facultyData,
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     loginUser,
     registerUser,
@@ -251,5 +302,7 @@ module.exports = {
     bulkRegisterUsers,
     getUsers,
     updateProfile,
-    updatePassword
+    updatePassword,
+    deleteUser,
+    updateUser,
 };

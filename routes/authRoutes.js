@@ -7,7 +7,9 @@ const {
     bulkRegisterUsers,
     getUsers,
     updateProfile,
-    updatePassword
+    updatePassword,
+    deleteUser,
+    updateUser
 } = require('../controllers/authController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
@@ -18,5 +20,7 @@ router.get('/me', protect, getMe);
 router.get('/users', protect, admin, getUsers);
 router.put('/profile', protect, updateProfile);
 router.put('/password', protect, updatePassword);
+router.delete('/users/:id', protect, admin, deleteUser);
+router.put('/users/:id', protect, admin, updateUser);
 
 module.exports = router;
