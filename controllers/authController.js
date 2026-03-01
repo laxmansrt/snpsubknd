@@ -28,6 +28,7 @@ const loginUser = async (req, res) => {
                 studentData: user.studentData,
                 facultyData: user.facultyData,
                 parentData: user.parentData,
+                hrdData: user.hrdData,
                 token: generateToken(user._id),
             });
         } else {
