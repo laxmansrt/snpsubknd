@@ -156,5 +156,146 @@ const publishResults = async (req, res) => {
     }
 };
 
-module.exports = { uploadMarks, getMarks, getGlobalStats, publishResults };
+// @desc    Export marksheet as printable HTML
+// @route   GET /api/marks/export/:studentUsn
+// @access  Private
+const exportMarksheet = async (req, res) => {
+    try {
+        const { studentUsn } = req.params;
+        const student = await User.findOne({ 'studentData.usn': studentUsn });
 
+        if (!student) {
+            return res.status(404).json({ message: 'Student not found' });
+        }
+
+        const marks = await Marks.find({ studentUsn }).sort({ subject: 1, examType: 1 });
+
+        if (marks.length === 0) {
+            return res.status(404).json({ message: 'No marks found for this student' });
+        }
+
+        // Group marks by subject
+        const subjects = {};
+        marks.forEach(m => {
+            if (!subjects[m.subject]) subjects[m.subject] = [];
+            subjects[m.subject].push(m);
+        });
+
+        const totalObtained = marks.reduce((s, m) => s + m.obtainedMarks, 0);
+        const totalMax = marks.reduce((s, m) => s + m.maxMarks, 0);
+        const percentage = ((totalObtained / totalMax) * 100).toFixed(1);
+
+        let tableRows = '';
+        let slNo = 1;
+        for (const [subject, exams] of Object.entries(subjects)) {
+            exams.forEach(exam => {
+                const pct = ((exam.obtainedMarks / exam.maxMarks) * 100).toFixed(1);
+                const status = pct >= 40 ? 'PASS' : 'FAIL';
+                const statusColor = pct >= 40 ? '#22c55e' : '#ef4444';
+                tableRows += `
+                    <tr>
+                        <td>${slNo++}</td>
+                        <td>${subject}</td>
+                        <td>${exam.examType}</td>
+                        <td>${exam.maxMarks}</td>
+                        <td>${exam.obtainedMarks}</td>
+                        <td>${pct}%</td>
+                        <td style="color:${statusColor};font-weight:bold">${status}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Marksheet - ${student.name}</title>
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { font-family: 'Inter', sans-serif; background: #fff; color: #1e293b; padding: 40px; }
+                .container { max-width: 800px; margin: 0 auto; border: 2px solid #1a2942; padding: 40px; }
+                .header { text-align: center; border-bottom: 3px solid #d4af37; padding-bottom: 20px; margin-bottom: 30px; }
+                .header h1 { color: #1a2942; font-size: 24px; margin-bottom: 4px; }
+                .header h2 { color: #d4af37; font-size: 16px; font-weight: 400; }
+                .header h3 { color: #64748b; font-size: 14px; margin-top: 10px; text-transform: uppercase; letter-spacing: 2px; }
+                .student-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 8px; }
+                .student-info p { font-size: 14px; }
+                .student-info strong { color: #1a2942; }
+                table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                th { background: #1a2942; color: #fff; padding: 12px 8px; text-align: left; font-size: 13px; }
+                td { padding: 10px 8px; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
+                tr:nth-child(even) { background: #f8fafc; }
+                .summary { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 30px; }
+                .summary-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; text-align: center; }
+                .summary-card .value { font-size: 24px; font-weight: 700; color: #1a2942; }
+                .summary-card .label { font-size: 12px; color: #64748b; text-transform: uppercase; }
+                .footer { text-align: center; font-size: 11px; color: #94a3b8; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+                @media print { body { padding: 20px; } .container { border: none; } }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Sapthagiri NPS University</h1>
+                    <h2>Bengaluru, Karnataka</h2>
+                    <h3>Academic Marksheet</h3>
+                </div>
+                <div class="student-info">
+                    <p><strong>Student Name:</strong> ${student.name}</p>
+                    <p><strong>USN:</strong> ${student.studentData?.usn || 'N/A'}</p>
+                    <p><strong>Department:</strong> ${student.studentData?.department || 'N/A'}</p>
+                    <p><strong>Semester:</strong> ${student.studentData?.semester || 'N/A'}</p>
+                    <p><strong>Class:</strong> ${student.studentData?.class || 'N/A'}</p>
+                    <p><strong>Generated:</strong> ${new Date().toLocaleDateString('en-IN')}</p>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Sl.No</th>
+                            <th>Subject</th>
+                            <th>Exam Type</th>
+                            <th>Max Marks</th>
+                            <th>Obtained</th>
+                            <th>Percentage</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
+                <div class="summary">
+                    <div class="summary-card">
+                        <div class="value">${totalObtained}/${totalMax}</div>
+                        <div class="label">Total Marks</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="value">${percentage}%</div>
+                        <div class="label">Overall Percentage</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="value">${student.studentData?.cgpa || 'N/A'}</div>
+                        <div class="label">CGPA</div>
+                    </div>
+                </div>
+                <div class="footer">
+                    <p>This is a computer-generated marksheet from Sapthagiri NPS University portal.</p>
+                    <p>Generated on ${new Date().toLocaleString('en-IN')}</p>
+                </div>
+            </div>
+            <script>window.onload = () => window.print();</script>
+        </body>
+        </html>
+        `;
+
+        res.setHeader('Content-Type', 'text/html');
+        res.send(html);
+    } catch (error) {
+        console.error('Export marksheet error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = { uploadMarks, getMarks, getGlobalStats, publishResults, exportMarksheet };

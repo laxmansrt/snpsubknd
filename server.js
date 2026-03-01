@@ -42,6 +42,9 @@ app.use('/api/academics', require('./routes/academicRoutes'));
 app.use('/api/guardian', require('./routes/guardianRoutes'));
 app.use('/api/public', require('./routes/publicRoutes'));
 app.use('/api/gallery', require('./routes/galleryRoutes'));
+app.use('/api/dashboard', require('./routes/dashboardRoutes'));
+app.use('/api/assignments', require('./routes/assignmentRoutes'));
+app.use('/api/feedback', require('./routes/feedbackRoutes'));
 
 const mongoose = require('mongoose');
 const guardian = require('./utils/systemGuardian');

@@ -24,8 +24,8 @@ const announcementSchema = new mongoose.Schema({
     },
     priority: {
         type: String,
-        enum: ['low', 'medium', 'high', 'urgent'],
-        default: 'medium',
+        enum: ['low', 'medium', 'high', 'urgent', 'normal'],
+        default: 'normal',
     },
     attachments: [{
         name: String,

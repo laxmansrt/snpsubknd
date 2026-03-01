@@ -1,4 +1,6 @@
 const Announcement = require('../models/Announcement');
+const User = require('../models/User');
+const { sendSMS } = require('../utils/notificationService');
 
 // @desc    Create new announcement
 // @route   POST /api/announcements
@@ -33,10 +35,47 @@ const createAnnouncement = async (req, res) => {
         const populatedAnnouncement = await Announcement.findById(announcement._id)
             .populate('publishedBy', 'name email role');
 
+        // Send SMS notifications in background (non-blocking)
+        broadcastAnnouncementSMS(title, content, targetAudience, targetClasses).catch(err =>
+            console.error('[SMS Broadcast Error]:', err.message)
+        );
+
         res.status(201).json(populatedAnnouncement);
     } catch (error) {
         console.error('Create announcement error:', error);
         res.status(500).json({ message: error.message });
+    }
+};
+
+// Helper: Broadcast SMS to targeted users
+const broadcastAnnouncementSMS = async (title, content, targetAudience, targetClasses) => {
+    try {
+        const query = { phone: { $exists: true, $ne: '' } };
+
+        // Build role filter
+        if (!targetAudience.includes('all')) {
+            query.role = { $in: targetAudience };
+        }
+
+        // Filter by department if targeting specific classes/departments
+        if (targetClasses && targetClasses.length > 0 && targetAudience.includes('student')) {
+            query['studentData.department'] = { $in: targetClasses };
+        }
+
+        const users = await User.find(query).select('phone name');
+        const smsText = `SNPSU Notice: ${title} - ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}. Check portal for details.`;
+
+        console.log(`[SMS Broadcast] Sending to ${users.length} users...`);
+
+        for (const user of users) {
+            if (user.phone) {
+                await sendSMS(user.phone, smsText);
+            }
+        }
+
+        console.log(`[SMS Broadcast] Completed for ${users.length} users.`);
+    } catch (error) {
+        console.error('[SMS Broadcast Failed]:', error.message);
     }
 };
 
