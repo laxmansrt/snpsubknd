@@ -287,10 +287,14 @@ const updateUser = async (req, res) => {
             name: updatedUser.name,
             email: updatedUser.email,
             role: updatedUser.role,
+            phone: updatedUser.phone,
             studentData: updatedUser.studentData,
             facultyData: updatedUser.facultyData,
         });
     } catch (error) {
+        if (error.code === 11000 && error.keyPattern && error.keyPattern.phone) {
+            return res.status(400).json({ message: 'This phone number is already used by another user.' });
+        }
         res.status(500).json({ message: error.message });
     }
 };
