@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['admin', 'faculty', 'student', 'parent'],
+        enum: ['admin', 'faculty', 'student', 'parent', 'staff', 'hrd'],
         required: true,
         trim: true,
     },
@@ -45,6 +45,10 @@ const userSchema = new mongoose.Schema({
     parentData: {
         childUsn: { type: String, trim: true },
         childName: { type: String, trim: true },
+    },
+    hrdData: {
+        employeeId: { type: String, trim: true },
+        department: { type: String, trim: true, default: 'Placement Desk' },
     },
 }, {
     timestamps: true,

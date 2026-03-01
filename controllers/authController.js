@@ -45,7 +45,7 @@ const loginUser = async (req, res) => {
 // @access  Private/Admin
 const registerUser = async (req, res) => {
     try {
-        const { name, email, password, role, studentData, facultyData, parentData } = req.body;
+        const { name, email, password, role, studentData, facultyData, parentData, hrdData } = req.body;
 
         // Check if user exists
         const userExists = await User.findOne({ email });
@@ -63,6 +63,7 @@ const registerUser = async (req, res) => {
             studentData,
             facultyData,
             parentData,
+            hrdData,
         });
 
         if (user) {
@@ -273,13 +274,14 @@ const updateUser = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const { name, email, role, studentData, facultyData, phone } = req.body;
+        const { name, email, role, studentData, facultyData, hrdData, phone } = req.body;
         if (name) user.name = name;
         if (email) user.email = email;
         if (role) user.role = role;
         if (phone) user.phone = phone;
         if (studentData) user.studentData = { ...user.studentData?.toObject?.() || {}, ...studentData };
         if (facultyData) user.facultyData = { ...user.facultyData?.toObject?.() || {}, ...facultyData };
+        if (hrdData) user.hrdData = { ...user.hrdData?.toObject?.() || {}, ...hrdData };
 
         const updatedUser = await user.save();
         res.json({
