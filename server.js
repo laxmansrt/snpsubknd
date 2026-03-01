@@ -45,6 +45,7 @@ app.use('/api/gallery', require('./routes/galleryRoutes'));
 app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 app.use('/api/assignments', require('./routes/assignmentRoutes'));
 app.use('/api/feedback', require('./routes/feedbackRoutes'));
+app.use('/api/placements', require('./routes/placementRoutes'));
 
 const mongoose = require('mongoose');
 const guardian = require('./utils/systemGuardian');
