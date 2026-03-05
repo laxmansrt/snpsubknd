@@ -51,6 +51,15 @@ const lostFoundSchema = new mongoose.Schema({
     timestamps: true,
 });
 
+// Main feed: active items sorted by newest — most common query
+lostFoundSchema.index({ status: 1, date: -1 });
+
+// Filter by lost/found type
+lostFoundSchema.index({ type: 1, status: 1 });
+
+// Reporter lookup
+lostFoundSchema.index({ reportedBy: 1 });
+
 const LostFound = mongoose.model('LostFound', lostFoundSchema);
 
 module.exports = LostFound;

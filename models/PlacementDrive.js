@@ -41,27 +41,22 @@ const placementDriveSchema = new mongoose.Schema({
         ref: 'User',
         required: true,
     },
-    applicants: [{
-        student: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User',
-        },
-        appliedAt: {
-            type: Date,
-            default: Date.now,
-        },
-        status: {
-            type: String,
-            enum: ['applied', 'shortlisted', 'interviewing', 'selected', 'rejected'],
-            default: 'applied',
-        },
-        resumeUrl: {
-            type: String,
-        }
-    }]
+    // PRODUCTION NOTE: Applicants are stored in the separate `PlacementApplication` collection.
+    // Query:   PlacementApplication.find({ driveId: drive._id })
+    // Count:   PlacementApplication.countDocuments({ driveId: drive._id })
+    // This replaces the old embedded applicants[] array.
 }, {
     timestamps: true,
 });
+
+// List active/upcoming drives, sorted by deadline
+placementDriveSchema.index({ status: 1, deadline: -1 });
+
+// Filter drives by eligible branches
+placementDriveSchema.index({ 'eligibilityCriteria.branches': 1 });
+
+// HRD view — drives they created
+placementDriveSchema.index({ createdBy: 1, createdAt: -1 });
 
 const PlacementDrive = mongoose.model('PlacementDrive', placementDriveSchema);
 

@@ -7,15 +7,16 @@ const {
     updateAnnouncement,
     deleteAnnouncement,
     markAsRead,
+    getReadCount,
 } = require('../controllers/announcementController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
-// All routes require authentication
-router.post('/', protect, createAnnouncement);
+router.post('/', protect, authorize('admin', 'faculty'), createAnnouncement);
 router.get('/', protect, getAnnouncements);
 router.get('/:id', protect, getAnnouncementById);
-router.put('/:id', protect, updateAnnouncement);
-router.delete('/:id', protect, deleteAnnouncement);
+router.put('/:id', protect, authorize('admin', 'faculty'), updateAnnouncement);
+router.delete('/:id', protect, authorize('admin', 'faculty'), deleteAnnouncement);
 router.post('/:id/read', protect, markAsRead);
+router.get('/:id/reads', protect, authorize('admin', 'faculty'), getReadCount);
 
 module.exports = router;

@@ -40,22 +40,9 @@ const assignmentSchema = new mongoose.Schema({
         ref: 'User',
         required: true,
     },
-    submissions: [{
-        studentId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User',
-            required: true,
-        },
-        studentUsn: { type: String, required: true },
-        studentName: { type: String, required: true },
-        submissionText: { type: String },
-        attachmentUrl: { type: String },
-        submittedAt: { type: Date, default: Date.now },
-        grade: { type: Number },
-        feedback: { type: String },
-        gradedAt: { type: Date },
-        gradedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    }],
+    // PRODUCTION NOTE: Submissions are stored in the separate `Submission` collection.
+    // Query: Submission.find({ assignmentId: assignment._id })
+    // This replaces the old embedded submissions[] array to prevent the 16MB doc limit.
     isActive: {
         type: Boolean,
         default: true,

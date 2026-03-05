@@ -94,6 +94,15 @@ const hostelApplicationSchema = new mongoose.Schema({
     timestamps: true,
 });
 
+// Student can only have one active hostel application
+hostelApplicationSchema.index({ studentId: 1 }, { unique: true });
+
+// Admin view: pending applications, sorted by date
+hostelApplicationSchema.index({ status: 1, appliedDate: -1 });
+
+// Lookup by USN in admin search
+hostelApplicationSchema.index({ studentUsn: 1 });
+
 const HostelApplication = mongoose.model('HostelApplication', hostelApplicationSchema);
 
 module.exports = HostelApplication;

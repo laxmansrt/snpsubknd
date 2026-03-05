@@ -1,4 +1,5 @@
 const PlacementDrive = require('../models/PlacementDrive');
+const PlacementApplication = require('../models/PlacementApplication');
 const User = require('../models/User');
 
 // @desc    Create a new placement drive
@@ -9,7 +10,7 @@ const createDrive = async (req, res) => {
         const {
             companyName,
             role,
-            package,
+            package: pkg,
             description,
             eligibilityCriteria,
             deadline,
@@ -17,20 +18,19 @@ const createDrive = async (req, res) => {
             status
         } = req.body;
 
-        const drive = new PlacementDrive({
+        const drive = await PlacementDrive.create({
             companyName,
             role,
-            package,
+            package: pkg,
             description,
             eligibilityCriteria,
             deadline,
             dateOfDrive,
             status,
-            createdBy: req.user._id
+            createdBy: req.user._id,
         });
 
-        const createdDrive = await drive.save();
-        res.status(201).json(createdDrive);
+        res.status(201).json(drive);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -41,26 +41,66 @@ const createDrive = async (req, res) => {
 // @access  Private
 const getDrives = async (req, res) => {
     try {
-        const drives = await PlacementDrive.find({}).sort({ createdAt: -1 });
-        res.json(drives);
+        const { status } = req.query;
+        const query = {};
+        if (status) query.status = status;
+
+        const drives = await PlacementDrive.find(query)
+            .sort({ deadline: 1, createdAt: -1 })
+            .lean();
+
+        if (drives.length === 0) return res.json([]);
+
+        // Get applicant counts for all drives in one aggregation
+        const driveIds = drives.map(d => d._id);
+        const countAgg = await PlacementApplication.aggregate([
+            { $match: { driveId: { $in: driveIds } } },
+            { $group: { _id: '$driveId', count: { $sum: 1 } } },
+        ]);
+        const countMap = {};
+        countAgg.forEach(c => { countMap[c._id.toString()] = c.count; });
+
+        // If student, also check which drives they have applied to
+        let appliedSet = new Set();
+        if (req.user.role === 'student') {
+            const myApplications = await PlacementApplication.find({
+                driveId: { $in: driveIds },
+                studentId: req.user._id,
+            }).select('driveId status').lean();
+            myApplications.forEach(a => appliedSet.add(a.driveId.toString()));
+        }
+
+        const result = drives.map(d => ({
+            ...d,
+            applicantCount: countMap[d._id.toString()] || 0,
+            hasApplied: appliedSet.has(d._id.toString()),
+        }));
+
+        res.json(result);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
 
-// @desc    Get drive by ID
+// @desc    Get drive by ID with full applicant list
 // @route   GET /api/placements/:id
 // @access  Private
 const getDriveById = async (req, res) => {
     try {
-        const drive = await PlacementDrive.findById(req.params.id)
-            .populate('applicants.student', 'name email studentData');
+        const drive = await PlacementDrive.findById(req.params.id).lean();
 
-        if (drive) {
-            res.json(drive);
-        } else {
-            res.status(404).json({ message: 'Drive not found' });
+        if (!drive) {
+            return res.status(404).json({ message: 'Drive not found' });
         }
+
+        // Fetch applicants from the separate PlacementApplication collection
+        const applicants = await PlacementApplication.find({ driveId: req.params.id })
+            .populate('studentId', 'name email studentData')
+            .populate('statusUpdatedBy', 'name')
+            .sort({ appliedAt: 1 })
+            .lean();
+
+        res.json({ ...drive, applicants });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -73,39 +113,38 @@ const updateDrive = async (req, res) => {
     try {
         const drive = await PlacementDrive.findById(req.params.id);
 
-        if (drive) {
-            drive.companyName = req.body.companyName || drive.companyName;
-            drive.role = req.body.role || drive.role;
-            drive.package = req.body.package || drive.package;
-            drive.description = req.body.description || drive.description;
-            drive.eligibilityCriteria = req.body.eligibilityCriteria || drive.eligibilityCriteria;
-            drive.deadline = req.body.deadline || drive.deadline;
-            drive.dateOfDrive = req.body.dateOfDrive || drive.dateOfDrive;
-            drive.status = req.body.status || drive.status;
-
-            const updatedDrive = await drive.save();
-            res.json(updatedDrive);
-        } else {
-            res.status(404).json({ message: 'Drive not found' });
+        if (!drive) {
+            return res.status(404).json({ message: 'Drive not found' });
         }
+
+        const fields = ['companyName', 'role', 'package', 'description', 'eligibilityCriteria', 'deadline', 'dateOfDrive', 'status'];
+        fields.forEach(f => {
+            if (req.body[f] !== undefined) drive[f] = req.body[f];
+        });
+
+        const updatedDrive = await drive.save();
+        res.json(updatedDrive);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
 
-// @desc    Delete a drive
+// @desc    Delete a drive (and cascade-delete its applications)
 // @route   DELETE /api/placements/:id
 // @access  Private/HRD or Admin
 const deleteDrive = async (req, res) => {
     try {
         const drive = await PlacementDrive.findById(req.params.id);
 
-        if (drive) {
-            await PlacementDrive.deleteOne({ _id: drive._id });
-            res.json({ message: 'Drive removed' });
-        } else {
-            res.status(404).json({ message: 'Drive not found' });
+        if (!drive) {
+            return res.status(404).json({ message: 'Drive not found' });
         }
+
+        // Cascade delete all applications for this drive
+        await PlacementApplication.deleteMany({ driveId: drive._id });
+        await PlacementDrive.deleteOne({ _id: drive._id });
+
+        res.json({ message: 'Drive and all applications removed' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -116,59 +155,78 @@ const deleteDrive = async (req, res) => {
 // @access  Private/Student
 const applyForDrive = async (req, res) => {
     try {
-        const drive = await PlacementDrive.findById(req.params.id);
+        const drive = await PlacementDrive.findById(req.params.id).lean();
 
         if (!drive) {
             return res.status(404).json({ message: 'Drive not found' });
         }
 
-        // Check if student already applied
-        const alreadyApplied = drive.applicants.find(
-            (applicant) => applicant.student.toString() === req.user._id.toString()
-        );
-
-        if (alreadyApplied) {
-            return res.status(400).json({ message: 'You have already applied for this drive' });
+        if (drive.status === 'completed' || drive.status === 'cancelled') {
+            return res.status(400).json({ message: 'This drive is no longer accepting applications' });
         }
 
-        // Check standard eligibility vs user data (optional advanced logic, for now just allow apply)
+        if (drive.deadline && new Date() > new Date(drive.deadline)) {
+            return res.status(400).json({ message: 'Application deadline has passed' });
+        }
 
-        drive.applicants.push({
-            student: req.user._id,
-            resumeUrl: req.body.resumeUrl // Make sure client provides resume link
+        // (Optional) Eligibility check
+        const student = req.user;
+        if (drive.eligibilityCriteria?.cgpa && student.studentData?.cgpa < drive.eligibilityCriteria.cgpa) {
+            return res.status(400).json({ message: `Minimum CGPA of ${drive.eligibilityCriteria.cgpa} required` });
+        }
+        if (
+            drive.eligibilityCriteria?.branches?.length > 0 &&
+            !drive.eligibilityCriteria.branches.includes(student.studentData?.department)
+        ) {
+            return res.status(400).json({ message: 'Your branch is not eligible for this drive' });
+        }
+
+        // create() will throw a duplicate key error if already applied (unique index)
+        const application = await PlacementApplication.create({
+            driveId: req.params.id,
+            studentId: req.user._id,
+            resumeUrl: req.body.resumeUrl || '',
         });
 
-        await drive.save();
-        res.status(201).json({ message: 'Applied successfully' });
+        res.status(201).json({ message: 'Applied successfully', application });
     } catch (error) {
+        if (error.code === 11000) {
+            return res.status(400).json({ message: 'You have already applied for this drive' });
+        }
         res.status(500).json({ message: error.message });
     }
 };
 
-// @desc    Update applicant status
+// @desc    Update applicant status (shortlist / reject / select)
 // @route   PUT /api/placements/:id/applicant/:studentId
 // @access  Private/HRD or Admin
 const updateApplicationStatus = async (req, res) => {
     try {
-        const { status } = req.body;
-        const drive = await PlacementDrive.findById(req.params.id);
+        const { status, notes } = req.body;
 
-        if (!drive) {
-            return res.status(404).json({ message: 'Drive not found' });
+        const validStatuses = ['applied', 'shortlisted', 'interviewing', 'selected', 'rejected'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({ message: 'Invalid status value' });
         }
 
-        const applicantIndex = drive.applicants.findIndex(
-            (a) => a.student.toString() === req.params.studentId.toString()
+        const application = await PlacementApplication.findOneAndUpdate(
+            { driveId: req.params.id, studentId: req.params.studentId },
+            {
+                $set: {
+                    status,
+                    notes: notes || '',
+                    statusUpdatedAt: new Date(),
+                    statusUpdatedBy: req.user._id,
+                },
+            },
+            { new: true, runValidators: true }
         );
 
-        if (applicantIndex === -1) {
-            return res.status(404).json({ message: 'Applicant not found' });
+        if (!application) {
+            return res.status(404).json({ message: 'Application not found' });
         }
 
-        drive.applicants[applicantIndex].status = status;
-        await drive.save();
-
-        res.json({ message: 'Application status updated' });
+        res.json({ message: 'Application status updated', application });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -181,5 +239,5 @@ module.exports = {
     updateDrive,
     deleteDrive,
     applyForDrive,
-    updateApplicationStatus
+    updateApplicationStatus,
 };

@@ -69,4 +69,13 @@ const transportApplicationSchema = new mongoose.Schema({
     timestamps: true,
 });
 
+// Student can only have one active transport application
+transportApplicationSchema.index({ studentId: 1 }, { unique: true });
+
+// Admin view: applications per route
+transportApplicationSchema.index({ routeId: 1, status: 1 });
+
+// Filter by status (pending approvals queue)
+transportApplicationSchema.index({ status: 1, appliedDate: -1 });
+
 module.exports = mongoose.model('TransportApplication', transportApplicationSchema);

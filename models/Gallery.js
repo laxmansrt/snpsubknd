@@ -28,10 +28,14 @@ const gallerySchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    }
+}, {
+    timestamps: true,
 });
+
+// Gallery page: filter by type and category, sorted by newest
+gallerySchema.index({ type: 1, category: 1, createdAt: -1 });
+
+// Public gallery (most recent first)
+gallerySchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('Gallery', gallerySchema);

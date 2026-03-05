@@ -47,24 +47,20 @@ const announcementSchema = new mongoose.Schema({
         type: Boolean,
         default: true,
     },
-    readBy: [{
-        userId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User',
-        },
-        readAt: {
-            type: Date,
-            default: Date.now,
-        },
-    }],
+    // PRODUCTION NOTE: Read receipts are stored in the separate `ReadReceipt` collection.
+    // Query: ReadReceipt.findOne({ announcementId: id, userId: req.user._id })
+    // Count: ReadReceipt.countDocuments({ announcementId: id })
+    // This replaces the old embedded readBy[] array.
 }, {
     timestamps: true,
 });
 
-// Index for faster queries
-announcementSchema.index({ publishedAt: -1 });
-announcementSchema.index({ targetAudience: 1 });
-announcementSchema.index({ isActive: 1 });
+// Compound index: covers the primary feed query (active, by audience, sorted by date)
+// Replaces 3 separate single-field indexes with one efficient compound index
+announcementSchema.index({ isActive: 1, targetAudience: 1, publishedAt: -1 });
+
+// TTL index — MongoDB auto-deletes announcements after their expiresAt date
+announcementSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, sparse: true });
 
 const Announcement = mongoose.model('Announcement', announcementSchema);
 

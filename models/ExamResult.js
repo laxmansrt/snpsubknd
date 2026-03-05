@@ -31,4 +31,13 @@ const examResultSchema = new mongoose.Schema({
     timestamps: true
 });
 
+// Prevent a student from submitting the same exam twice
+examResultSchema.index({ student: 1, exam: 1 }, { unique: true });
+
+// Fast result lookup by student ("my results" page)
+examResultSchema.index({ student: 1, submittedAt: -1 });
+
+// Fast lookup of all results for an exam (faculty view)
+examResultSchema.index({ exam: 1 });
+
 module.exports = mongoose.model('ExamResult', examResultSchema);

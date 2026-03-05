@@ -1,4 +1,5 @@
 const Feedback = require('../models/Feedback');
+const FeedbackResponse = require('../models/FeedbackResponse');
 
 // @desc    Create a new feedback/survey form
 // @route   POST /api/feedback
@@ -46,7 +47,6 @@ const getFeedbackForms = async (req, res) => {
         if (type) query.type = type;
         if (department) query.department = department;
 
-        // Filter expired ones
         query.$or = [
             { expiresAt: { $exists: false } },
             { expiresAt: null },
@@ -56,29 +56,36 @@ const getFeedbackForms = async (req, res) => {
         const feedbacks = await Feedback.find(query)
             .populate('createdBy', 'name email role')
             .populate('targetFaculty', 'name email')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
 
-        // For students, don't send other people's responses and mark if they already responded
+        if (feedbacks.length === 0) return res.json([]);
+
+        const feedbackIds = feedbacks.map(f => f._id);
+
+        // One aggregation: get response counts for ALL forms in a single DB round-trip
+        const countAgg = await FeedbackResponse.aggregate([
+            { $match: { feedbackId: { $in: feedbackIds } } },
+            { $group: { _id: '$feedbackId', count: { $sum: 1 } } },
+        ]);
+        const countMap = {};
+        countAgg.forEach(c => { countMap[c._id.toString()] = c.count; });
+
+        // For students: check if THEY specifically responded (one query for all forms)
+        let respondedSet = new Set();
         if (req.user.role === 'student') {
-            const result = feedbacks.map(f => {
-                const obj = f.toObject();
-                const hasResponded = obj.responses.some(
-                    r => r.respondentId?.toString() === req.user._id.toString()
-                );
-                obj.hasResponded = hasResponded;
-                obj.totalResponses = obj.responses.length;
-                delete obj.responses; // Privacy - don't send other responses
-                return obj;
-            });
-            return res.json(result);
+            const myResponses = await FeedbackResponse.find({
+                feedbackId: { $in: feedbackIds },
+                respondentId: req.user._id,
+            }).select('feedbackId').lean();
+            myResponses.forEach(r => respondedSet.add(r.feedbackId.toString()));
         }
 
-        // For faculty/admin, include response count but not individual responses in list
-        const result = feedbacks.map(f => {
-            const obj = f.toObject();
-            obj.totalResponses = obj.responses.length;
-            return obj;
-        });
+        const result = feedbacks.map(f => ({
+            ...f,
+            totalResponses: countMap[f._id.toString()] || 0,
+            hasResponded: respondedSet.has(f._id.toString()),
+        }));
 
         res.json(result);
     } catch (error) {
@@ -87,68 +94,84 @@ const getFeedbackForms = async (req, res) => {
     }
 };
 
-// @desc    Get single feedback form with analytics
+// @desc    Get single feedback form with analytics (aggregation pipeline)
 // @route   GET /api/feedback/:id
 // @access  Private (Admin/Faculty)
 const getFeedbackById = async (req, res) => {
     try {
         const feedback = await Feedback.findById(req.params.id)
             .populate('createdBy', 'name email role')
-            .populate('targetFaculty', 'name email');
+            .populate('targetFaculty', 'name email')
+            .lean();
 
         if (!feedback) {
             return res.status(404).json({ message: 'Feedback form not found' });
         }
 
-        // Generate analytics for each question
+        const totalResponses = await FeedbackResponse.countDocuments({ feedbackId: req.params.id });
+
+        // Build analytics per question using a MongoDB aggregation pipeline
+        // Much more efficient than loading all responses into memory
+        const analyticsAgg = await FeedbackResponse.aggregate([
+            { $match: { feedbackId: feedback._id } },
+            { $unwind: '$answers' },
+            {
+                $group: {
+                    _id: '$answers.questionIndex',
+                    ratingValues: {
+                        $push: {
+                            $cond: [{ $gt: ['$answers.ratingValue', null] }, '$answers.ratingValue', '$$REMOVE']
+                        }
+                    },
+                    textValues: {
+                        $push: {
+                            $cond: [{ $gt: ['$answers.textValue', null] }, '$answers.textValue', '$$REMOVE']
+                        }
+                    },
+                    selectedOptions: {
+                        $push: {
+                            $cond: [{ $gt: ['$answers.selectedOption', null] }, '$answers.selectedOption', '$$REMOVE']
+                        }
+                    },
+                    count: { $sum: 1 },
+                }
+            },
+            { $sort: { _id: 1 } },
+        ]);
+
+        // Map aggregation results to question analytics
+        const aggMap = {};
+        analyticsAgg.forEach(a => { aggMap[a._id] = a; });
+
         const analytics = feedback.questions.map((question, index) => {
-            const answers = feedback.responses
-                .map(r => r.answers.find(a => a.questionIndex === index))
-                .filter(Boolean);
+            const agg = aggMap[index] || { ratingValues: [], textValues: [], selectedOptions: [], count: 0 };
 
             if (question.type === 'rating') {
-                const ratings = answers.map(a => a.ratingValue).filter(Boolean);
+                const ratings = agg.ratingValues.filter(Boolean);
                 const avgRating = ratings.length > 0
-                    ? Math.round((ratings.reduce((s, r) => s + r, 0) / ratings.length) * 10) / 10
-                    : 0;
+                    ? Math.round((ratings.reduce((s, r) => s + r, 0) / ratings.length) * 10) / 10 : 0;
                 const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
                 ratings.forEach(r => { if (distribution[r] !== undefined) distribution[r]++; });
-
-                return {
-                    question: question.question,
-                    type: 'rating',
-                    totalAnswers: ratings.length,
-                    averageRating: avgRating,
-                    distribution,
-                };
-            } else if (question.type === 'multiple_choice') {
-                const choices = {};
-                answers.forEach(a => {
-                    if (a.selectedOption) {
-                        choices[a.selectedOption] = (choices[a.selectedOption] || 0) + 1;
-                    }
-                });
-                return {
-                    question: question.question,
-                    type: 'multiple_choice',
-                    totalAnswers: answers.length,
-                    distribution: choices,
-                };
-            } else {
-                return {
-                    question: question.question,
-                    type: 'text',
-                    totalAnswers: answers.length,
-                    sampleResponses: answers.slice(0, 10).map(a => a.textValue),
-                };
+                return { question: question.question, type: 'rating', totalAnswers: ratings.length, averageRating: avgRating, distribution };
             }
+
+            if (question.type === 'multiple_choice') {
+                const choices = {};
+                agg.selectedOptions.filter(Boolean).forEach(opt => {
+                    choices[opt] = (choices[opt] || 0) + 1;
+                });
+                return { question: question.question, type: 'multiple_choice', totalAnswers: agg.count, distribution: choices };
+            }
+
+            return {
+                question: question.question,
+                type: 'text',
+                totalAnswers: agg.textValues.filter(Boolean).length,
+                sampleResponses: agg.textValues.filter(Boolean).slice(0, 10),
+            };
         });
 
-        res.json({
-            feedback: feedback.toObject(),
-            analytics,
-            totalResponses: feedback.responses.length,
-        });
+        res.json({ feedback, analytics, totalResponses });
     } catch (error) {
         console.error('Get feedback error:', error);
         res.status(500).json({ message: error.message });
@@ -160,28 +183,16 @@ const getFeedbackById = async (req, res) => {
 // @access  Private (Student)
 const submitResponse = async (req, res) => {
     try {
-        const feedback = await Feedback.findById(req.params.id);
+        const feedback = await Feedback.findById(req.params.id).lean();
 
         if (!feedback) {
             return res.status(404).json({ message: 'Feedback form not found' });
         }
-
         if (!feedback.isActive) {
             return res.status(400).json({ message: 'This feedback form is no longer active' });
         }
-
-        // Check expiry
         if (feedback.expiresAt && new Date() > new Date(feedback.expiresAt)) {
             return res.status(400).json({ message: 'This feedback form has expired' });
-        }
-
-        // Check if already responded
-        const alreadyResponded = feedback.responses.some(
-            r => r.respondentId?.toString() === req.user._id.toString()
-        );
-
-        if (alreadyResponded) {
-            return res.status(400).json({ message: 'You have already submitted a response' });
         }
 
         const { answers, isAnonymous } = req.body;
@@ -190,15 +201,28 @@ const submitResponse = async (req, res) => {
             return res.status(400).json({ message: 'Answers are required' });
         }
 
-        feedback.responses.push({
+        // Duplicate check: query the separate FeedbackResponse collection
+        const alreadyResponded = await FeedbackResponse.exists({
+            feedbackId: req.params.id,
             respondentId: req.user._id,
-            isAnonymous: isAnonymous !== false, // Default anonymous
+        });
+
+        if (alreadyResponded) {
+            return res.status(400).json({ message: 'You have already submitted a response' });
+        }
+
+        await FeedbackResponse.create({
+            feedbackId: req.params.id,
+            respondentId: isAnonymous !== false ? null : req.user._id,
+            isAnonymous: isAnonymous !== false,
             answers,
         });
 
-        await feedback.save();
         res.json({ message: 'Response submitted successfully' });
     } catch (error) {
+        if (error.code === 11000) {
+            return res.status(400).json({ message: 'You have already submitted a response' });
+        }
         console.error('Submit response error:', error);
         res.status(500).json({ message: error.message });
     }
@@ -214,7 +238,6 @@ const deleteFeedback = async (req, res) => {
         if (!feedback) {
             return res.status(404).json({ message: 'Feedback form not found' });
         }
-
         if (feedback.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
             return res.status(403).json({ message: 'Not authorized' });
         }

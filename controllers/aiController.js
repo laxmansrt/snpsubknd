@@ -11,10 +11,16 @@ const cacheUtil = require('../utils/cache');
 
 // Triggering fresh deploy to sync knowledge base
 // Initialize Groq (via OpenAI SDK)
-const openai = new OpenAI({
-    apiKey: process.env.GROQ_API_KEY,
-    baseURL: "https://api.groq.com/openai/v1"
-});
+let openai = null;
+const initOpenAI = () => {
+    if (!openai && process.env.GROQ_API_KEY) {
+        openai = new OpenAI({
+            apiKey: process.env.GROQ_API_KEY,
+            baseURL: "https://api.groq.com/openai/v1"
+        });
+    }
+    return openai;
+};
 
 /**
  * @desc    College AI Chat Assistant
@@ -26,7 +32,9 @@ const chatWithAI = asyncHandler(async (req, res) => {
     const user = req.user;
     const userRole = user?.role || "guest";
 
-    if (!process.env.GROQ_API_KEY) {
+    const aiClient = initOpenAI();
+
+    if (!aiClient || !process.env.GROQ_API_KEY) {
         res.status(500);
         throw new Error("AI service not configured. GROQ_API_KEY missing.");
     }
@@ -169,7 +177,7 @@ ${portalContext || "No dynamic context available."}
        4. Generate AI Response
     ---------------------------------------------------- */
     try {
-        const response = await openai.chat.completions.create({
+        const response = await aiClient.chat.completions.create({
             model: "llama-3.3-70b-versatile", // Validated working model
             messages: messages,
             max_tokens: 500,

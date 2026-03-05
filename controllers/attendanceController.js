@@ -7,7 +7,7 @@ const User = require('../models/User');
 const markAttendance = async (req, res) => {
     try {
         const { attendanceData } = req.body; // Array of { studentUsn, studentName, status, remarks }
-        const { class: className, subject, date } = req.body;
+        const { class: className, subject, date, academicYear } = req.body;
 
         if (!attendanceData || !className || !subject || !date) {
             return res.status(400).json({ message: 'Missing required fields' });
@@ -46,6 +46,7 @@ const markAttendance = async (req, res) => {
                     class: className,
                     subject,
                     date: new Date(date),
+                    academicYear: academicYear || `${new Date().getFullYear()}-${String(new Date().getFullYear() + 1).slice(-2)}`, // Fallback logic
                     status: record.status,
                     markedBy: req.user._id,
                     remarks: record.remarks || '',

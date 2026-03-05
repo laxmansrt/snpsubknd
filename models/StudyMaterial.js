@@ -19,7 +19,13 @@ const studyMaterialSchema = new mongoose.Schema({
     },
     fileUrl: {
         type: String,
-        required: true, // Can be a link or base64 data URI
+        required: true,
+        // IMPORTANT: Store only CDN/cloud URLs, never base64 strings
+        // Large base64 blobs in MongoDB are an Atlas storage anti-pattern
+        validate: {
+            validator: (v) => !v.startsWith('data:'),
+            message: 'fileUrl must be a CDN URL, not a base64 data URI. Upload files to Cloudinary first.',
+        },
     },
     size: {
         type: String,
@@ -33,5 +39,11 @@ const studyMaterialSchema = new mongoose.Schema({
 }, {
     timestamps: true,
 });
+
+// Primary student query: materials for my class and subject
+studyMaterialSchema.index({ class: 1, subject: 1 });
+
+// Faculty view: materials uploaded by me
+studyMaterialSchema.index({ uploadedBy: 1, createdAt: -1 });
 
 module.exports = mongoose.model('StudyMaterial', studyMaterialSchema);

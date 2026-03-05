@@ -1,65 +1,53 @@
-# Sapthagiri NPS University - Backend API
+# ⚙ Server Core - SAPTHAGIRI NPS University Portal
 
-Backend API for the Sapthagiri NPS University Management System.
+This server acts as the primary data processing, storage, AI integration, and core infrastructure interface behind the **SAPTHAGIRI NPS University Portal backend**.
 
-## Deployment on Vercel
+---
 
-### Required Environment Variables
+## 🏗️ Technology Stack
 
-You need to configure the following environment variables in your Vercel project settings:
+Our robust backend relies on industry-standard technologies with specialized AI augmentation integrations.
 
-1. Go to [Vercel Dashboard](https://vercel.com/dashboard)
-2. Select your `snpsubknd` project
-3. Go to **Settings** → **Environment Variables**
-4. Add the following variables:
+- **Environment**: Node.js & Express.js wrapper (`express`, `express-async-handler`)
+- **Database**: MongoDB utilizing `mongoose` modeling.
+- **Security & Validation**: 
+    - `bcryptjs` - For hashing and safeguarding user credentials
+    - `jsonwebtoken` - For JSON-based stateless secured authentication
+    - `express-rate-limit` - DDoS protection and request throttling
+    - `cors` - Configuring cross-origin setups perfectly
+- **Integrations**:
+    - `nodemailer` - Built internally to interact with SMTP setups for verification, notifications, and alerts.
+    - `openai` / `@google/generative-ai` - AI features to boost educational insights, and automations within the user lifecycle interactions.
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `MONGO_URI` | MongoDB connection string | `mongodb+srv://username:password@cluster.mongodb.net/dbname` |
-| `JWT_SECRET` | Secret key for JWT tokens | Any random secure string |
-| `PORT` | Port number (optional) | `5000` |
-| `NODE_ENV` | Environment mode | `production` |
+---
 
-### After Adding Environment Variables
+## 📋 Required Environments
 
-1. Go to the **Deployments** tab
-2. Click on the three dots (...) next to the latest deployment
-3. Select **Redeploy**
+Store the following config details as a `.env` in the root `/snpsubknd/` directory:
 
-## Local Development
-
-1. Create a `.env` file in the backend directory:
 ```env
-MONGO_URI=your_mongodb_connection_string
-JWT_SECRET=your_jwt_secret
-PORT=5000
-NODE_ENV=development
+PORT=...               # Preferred Dev Server Port
+MONGODB_URI=...        # Your target remote/local MongoDB driver link
+JWT_SECRET=...         # Strong cryptographic string
+EMAIL_USER=...         # Target system SMTP configuration email target
+EMAIL_PASS=...         # Standard SMTP app password
+OPENAI_API_KEY=...
+GOOGLE_API_KEY=...
 ```
 
-2. Install dependencies:
+---
+
+## 🏃 Running the Backend Locally
+
+Development environments include `nodemon` out of the box so updates mirror seamlessly across code edits to your running server dynamically:
+
 ```bash
+# Standard dependency initialization
 npm install
-```
 
-3. Run the development server:
-```bash
+# Start development daemon (Listens up for direct edits)
 npm run dev
+
+# Starts statically
+npm start
 ```
-
-## API Endpoints
-
-- `GET /` - Health check
-- `GET /api` - API health check
-- `POST /api/auth/login` - User login
-- `POST /api/auth/register` - User registration
-- `GET /api/auth/me` - Get current user
-- And more...
-
-## Tech Stack
-
-- **Node.js** - Runtime environment
-- **Express** - Web framework
-- **MongoDB** - Database
-- **Mongoose** - ODM
-- **JWT** - Authentication
-- **bcryptjs** - Password hashing

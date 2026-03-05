@@ -1,4 +1,5 @@
 const Announcement = require('../models/Announcement');
+const ReadReceipt = require('../models/ReadReceipt');
 const User = require('../models/User');
 const { sendSMS } = require('../utils/notificationService');
 
@@ -221,28 +222,28 @@ const deleteAnnouncement = async (req, res) => {
 // @access  Private
 const markAsRead = async (req, res) => {
     try {
-        const announcement = await Announcement.findById(req.params.id);
-
-        if (!announcement) {
-            return res.status(404).json({ message: 'Announcement not found' });
-        }
-
-        // Check if already read
-        const alreadyRead = announcement.readBy.some(
-            read => read.userId.toString() === req.user._id.toString()
+        // Idempotent upsert — safe to call multiple times, no full doc rewrite
+        await ReadReceipt.findOneAndUpdate(
+            { announcementId: req.params.id, userId: req.user._id },
+            { $setOnInsert: { announcementId: req.params.id, userId: req.user._id, readAt: new Date() } },
+            { upsert: true, new: true }
         );
-
-        if (!alreadyRead) {
-            announcement.readBy.push({
-                userId: req.user._id,
-                readAt: new Date(),
-            });
-            await announcement.save();
-        }
 
         res.json({ message: 'Marked as read' });
     } catch (error) {
         console.error('Mark as read error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Get read receipt counts for an announcement (admin)
+// @route   GET /api/announcements/:id/reads
+// @access  Private (Admin/Faculty)
+const getReadCount = async (req, res) => {
+    try {
+        const count = await ReadReceipt.countDocuments({ announcementId: req.params.id });
+        res.json({ announcementId: req.params.id, readCount: count });
+    } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
@@ -254,4 +255,5 @@ module.exports = {
     updateAnnouncement,
     deleteAnnouncement,
     markAsRead,
+    getReadCount,
 };
