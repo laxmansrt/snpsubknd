@@ -10,6 +10,7 @@ const options = {
 
 const connectDB = async () => {
     try {
+        mongoose.set('strictQuery', true); // Prevent query injection by stripping unspecified fields
         if (mongoose.connection.readyState === 1) {
             return mongoose.connection;
         }

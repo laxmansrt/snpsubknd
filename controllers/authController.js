@@ -1,23 +1,28 @@
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
+const {
+    loginSchema,
+    registerSchema,
+    bulkRegisterSchema,
+    updateProfileSchema,
+    updatePasswordSchema,
+    updateUserSchema
+} = require('../validations/authValidation');
 
 // @desc    Login user
 // @route   POST /api/auth/login
 // @access  Public
 const loginUser = async (req, res) => {
     try {
-        const { email, password, role } = req.body; // 'email' is used as a general identifier here
-
-        console.log('Login attempt:', { identifier: email, role, hasPassword: !!password });
+        // Zod validation throws if input is invalid
+        const validData = loginSchema.parse(req.body);
+        const { email, password, role } = validData;
 
         // Find user by email OR phone and role
         const user = await User.findOne({
             $or: [{ email: email }, { phone: email }],
             role: role
         });
-
-        console.log('User found:', user ? 'Yes' : 'No');
-        console.log('User details:', user ? { email: user.email, phone: user.phone, role: user.role } : 'N/A');
 
         if (user && (await user.matchPassword(password))) {
             res.json({
@@ -36,6 +41,9 @@ const loginUser = async (req, res) => {
             res.status(401).json({ message: 'Invalid email, password, or role' });
         }
     } catch (error) {
+        if (error.name === 'ZodError') {
+            return res.status(400).json({ message: error.errors[0].message });
+        }
         console.error('Login error:', error);
         res.status(500).json({ message: error.message });
     }
@@ -46,7 +54,8 @@ const loginUser = async (req, res) => {
 // @access  Private/Admin
 const registerUser = async (req, res) => {
     try {
-        const { name, email, password, role, studentData, facultyData, parentData, hrdData } = req.body;
+        const validData = registerSchema.parse(req.body);
+        const { name, email, password, role, studentData, facultyData, parentData, hrdData, phone } = validData;
 
         // Check if user exists
         const userExists = await User.findOne({ email });
@@ -61,6 +70,7 @@ const registerUser = async (req, res) => {
             email,
             password,
             role,
+            phone,
             studentData,
             facultyData,
             parentData,
@@ -79,6 +89,9 @@ const registerUser = async (req, res) => {
             res.status(400).json({ message: 'Invalid user data' });
         }
     } catch (error) {
+        if (error.name === 'ZodError') {
+            return res.status(400).json({ message: error.errors[0].message });
+        }
         res.status(500).json({ message: error.message });
     }
 };
@@ -100,7 +113,7 @@ const getMe = async (req, res) => {
 // @access  Private/Admin
 const bulkRegisterUsers = async (req, res) => {
     try {
-        const users = req.body; // Array of user objects
+        const users = bulkRegisterSchema.parse(req.body); // Validate full array properly
         const results = {
             success: 0,
             failed: 0,
@@ -109,11 +122,6 @@ const bulkRegisterUsers = async (req, res) => {
 
         for (const userData of users) {
             try {
-                // Basic validation
-                if (!userData.email || !userData.name || !userData.role) {
-                    throw new Error(`Missing required fields for ${userData.email || 'unknown user'}`);
-                }
-
                 // Check if user exists
                 const userExists = await User.findOne({ email: userData.email });
                 if (userExists) {
@@ -145,7 +153,6 @@ const bulkRegisterUsers = async (req, res) => {
                 } else if (userData.role === 'parent') {
                     let childName = userData.childName;
 
-                    // If childName is missing but childUsn is present, try to find the student
                     if (!childName && userData.childUsn) {
                         const student = await User.findOne({ 'studentData.usn': userData.childUsn, role: 'student' });
                         if (student) {
@@ -173,6 +180,9 @@ const bulkRegisterUsers = async (req, res) => {
         });
 
     } catch (error) {
+        if (error.name === 'ZodError') {
+            return res.status(400).json({ message: 'Invalid bulk data format provided', issues: error.errors });
+        }
         res.status(500).json({ message: error.message });
     }
 };
@@ -183,9 +193,9 @@ const bulkRegisterUsers = async (req, res) => {
 const getUsers = async (req, res) => {
     try {
         const { role } = req.query;
-        const query = role ? { role } : {};
+        // sanitize the role search to avoid query injections directly to DB
+        const query = role && typeof role === 'string' ? { role } : {};
         const users = await User.find(query).select('-password');
-        console.log(`API/getUsers: Fetched ${users.length} users. Query:`, query);
         res.json(users);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -197,14 +207,12 @@ const getUsers = async (req, res) => {
 // @access  Private
 const updateProfile = async (req, res) => {
     try {
+        const validData = updateProfileSchema.parse(req.body);
         const user = await User.findById(req.user._id);
 
         if (user) {
-            user.name = req.body.name || user.name;
-            user.email = req.body.email || user.email;
-
-            // Update role-specific data if provided (e.g., phone number could be added to schema later)
-            // For now, let's just stick to name and email as per schema
+            user.name = validData.name || user.name;
+            user.email = validData.email || user.email;
 
             const updatedUser = await user.save();
 
@@ -222,6 +230,9 @@ const updateProfile = async (req, res) => {
             res.status(404).json({ message: 'User not found' });
         }
     } catch (error) {
+        if (error.name === 'ZodError') {
+            return res.status(400).json({ message: error.errors[0].message });
+        }
         res.status(500).json({ message: error.message });
     }
 };
@@ -231,7 +242,9 @@ const updateProfile = async (req, res) => {
 // @access  Private
 const updatePassword = async (req, res) => {
     try {
-        const { currentPassword, newPassword } = req.body;
+        const validData = updatePasswordSchema.parse(req.body);
+        const { currentPassword, newPassword } = validData;
+
         const user = await User.findById(req.user._id);
 
         if (user && (await user.matchPassword(currentPassword))) {
@@ -242,6 +255,9 @@ const updatePassword = async (req, res) => {
             res.status(401).json({ message: 'Invalid current password' });
         }
     } catch (error) {
+        if (error.name === 'ZodError') {
+            return res.status(400).json({ message: error.errors[0].message });
+        }
         res.status(500).json({ message: error.message });
     }
 };
@@ -270,16 +286,20 @@ const deleteUser = async (req, res) => {
 // @access  Private/Admin
 const updateUser = async (req, res) => {
     try {
+        // Only take perfectly verified schema elements
+        const validData = updateUserSchema.parse(req.body);
+
         const user = await User.findById(req.params.id);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const { name, email, role, studentData, facultyData, hrdData, phone } = req.body;
+        const { name, email, role, phone, studentData, facultyData, hrdData } = validData;
         if (name) user.name = name;
         if (email) user.email = email;
         if (role) user.role = role;
         if (phone) user.phone = phone;
+
         if (studentData) user.studentData = { ...user.studentData?.toObject?.() || {}, ...studentData };
         if (facultyData) user.facultyData = { ...user.facultyData?.toObject?.() || {}, ...facultyData };
         if (hrdData) user.hrdData = { ...user.hrdData?.toObject?.() || {}, ...hrdData };
@@ -295,6 +315,9 @@ const updateUser = async (req, res) => {
             facultyData: updatedUser.facultyData,
         });
     } catch (error) {
+        if (error.name === 'ZodError') {
+            return res.status(400).json({ message: error.errors[0].message });
+        }
         if (error.code === 11000 && error.keyPattern && error.keyPattern.phone) {
             return res.status(400).json({ message: 'This phone number is already used by another user.' });
         }

@@ -3,6 +3,8 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
+const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
 const connectDB = require('./config/db');
 const { apiRateLimiter } = require('./middleware/rateLimiter');
 
@@ -22,9 +24,14 @@ connectDB();
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(helmet()); // Set security HTTP headers
+app.use(cors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173', // Restrict CORS
+    credentials: true
+}));
 app.use(express.json({ limit: '10mb' })); // Increased to 10mb for base64 file uploads
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(mongoSanitize()); // Prevent NoSQL injection
 app.use(apiRateLimiter);
 
 // Routes
